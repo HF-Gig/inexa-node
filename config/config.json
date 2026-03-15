@@ -1,0 +1,26 @@
+{
+  "development": {
+    "username": "devuser",
+    "password": "O!7h98[p=1OX",
+    "database": "inexa_db",
+    "host": "82.29.164.77",
+    "port": 3306,
+    "dialect": "mysql"
+  },
+  "test": {
+    "username": "devuser",
+    "password": "Admin@123",
+    "database": "inexa_db",
+    "host": "172.16.16.28",
+    "port": 3309,
+    "dialect": "mysql"
+  },
+  "production": {
+    "username": "devuser",
+    "password": "O!7h98[p=1OX",
+    "database": "inexa_db",
+    "host": "82.29.164.77",
+    "port": 3306,
+    "dialect": "mysql"
+  }
+} 
