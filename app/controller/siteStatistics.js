@@ -60,9 +60,9 @@ export const deleteSiteStatistic = async (req, res) => {
 export const getHomeStatsCount = async (req, res) => {
   const db = await initModels();
   try{
-    const totalCourses = await db.courses.count();
+    const totalActiveCourses = await db.courses.count({ where: { status: 1 } });
     const totalUsers = await db.user.count();
-    return res.status(200).json({ totalCourses, totalUsers });
+    return res.status(200).json({ totalCourses: totalActiveCourses, totalUsers });
   }
   catch(err){
     return res.status(500).json({ error: 'Failed to fetch home stats count', details: err.message });

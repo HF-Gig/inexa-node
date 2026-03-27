@@ -1,5 +1,5 @@
 import express from "express";
-import { createCheckoutSession, handleSubscriptionWebhook, cancelSubscription, getSubscriptionDetails, sendInvoiceByPaymentId, notifyPaymentCompletion, createManualEft, updatePaymentStatus, getAllPayments, deletePayment, getUserPayments } from "../controller/payment.js";
+import { createCheckoutSession, handleSubscriptionWebhook, cancelSubscription, getSubscriptionDetails, sendInvoiceByPaymentId, notifyPaymentCompletion, createManualEft, markPaymentSentByUser, updatePaymentStatus, getAllPayments, deletePayment, getUserPayments } from "../controller/payment.js";
 import { authenticateToken } from '../middleware/auth.js';
 import { isAdmin, isStudent, isEditor } from '../middleware/roleCheck.js';
 
@@ -15,6 +15,7 @@ router.use(authenticateToken);
 
 router.post("/checkout", isStudent, createCheckoutSession);
 router.post("/manual-eft", authenticateToken, createManualEft);
+router.put("/:paymentId/mark-sent", authenticateToken, markPaymentSentByUser);
 router.put("/:paymentId/status", authenticateToken, updatePaymentStatus);
 router.delete("/:paymentId", authenticateToken, deletePayment);
 router.put("/subscription/:subscriptionId/cancel", isStudent, cancelSubscription);

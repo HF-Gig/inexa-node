@@ -15,8 +15,9 @@ import contactRoutes from './routes/contact.js';
 import subscriptionRoutes from './routes/subscription.js';
 import payfastRoutes from './routes/payfast.js';
 import paystackRoutes from './routes/paystack.js';
+import enquiriesRoutes from './routes/enquiries.js';
 
-import { updateCostsByProvider } from './controller/costs.js';
+import { getCostConfigs, updateCostConfigById, deleteCostConfigById, updateCostsByProvider } from './controller/costs.js';
 const router = express.Router();
 
 
@@ -36,7 +37,11 @@ router.use('/contact', contactRoutes);
 router.use('/subscriptions', subscriptionRoutes);
 router.use('/payfast', payfastRoutes);
 router.use('/paystack', paystackRoutes);
+router.use('/enquiries', enquiriesRoutes);
 
+router.get('/costs', getCostConfigs);
 router.post('/costs/update', updateCostsByProvider);
+router.put('/costs/:id', updateCostConfigById);
+router.delete('/costs/:id', deleteCostConfigById);
 
 export default router;

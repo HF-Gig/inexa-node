@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import apiRoutes from './app/routes.js';
 import { handleSubscriptionWebhook } from './app/controller/payment.js';
 import { startCourseCron } from './app/cron/courseScheduler.js';
+import { startPaystackInstallmentCron } from './app/cron/paystackInstallments.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,6 +44,7 @@ const server = http.createServer(app);
 
 // API Routes with common prefix
 startCourseCron();
+startPaystackInstallmentCron();
 app.use('/api', apiRoutes);
 
 

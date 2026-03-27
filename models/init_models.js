@@ -18,8 +18,10 @@ import subjectsModel from "./subjects.js";
 import staffCourseModel from "./staff_course.js";
 import featuredCoursesModal from "./featured_courses.js";
 import contactModal from "./contact.js";
+import enquiriesModel from "./enquiries.js";
 import facilitatorsModel from "./facilitators.js";
 import featuredFacilitatorsModel from "./featured_facilitators.js";
+import courseCostConfigModel from "./course_cost_config.js";
 
 dotenv.config();
 const modelsObjs = [];
@@ -110,10 +112,14 @@ async function _initModels() {
         db.featured_course = FeaturedCourse;
         const Contact = contactModal(sequelize, DataTypes)
         db.contact = Contact;
+        const Enquiry = enquiriesModel(sequelize, DataTypes)
+        db.enquiry = Enquiry;
         const Facilitator = facilitatorsModel(sequelize, DataTypes)
         db.facilitator = Facilitator;
         const FeaturedFacilitator = featuredFacilitatorsModel(sequelize, DataTypes)
         db.featured_facilitators = FeaturedFacilitator;
+        const CourseCostConfig = courseCostConfigModel(sequelize, DataTypes)
+        db.course_cost_config = CourseCostConfig;
 
         // Call associate methods for all models
         Object.values(db).forEach(model => {

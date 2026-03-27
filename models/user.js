@@ -60,6 +60,23 @@ const userModal = (sequelize, DataTypes) => {
             type: DataTypes.STRING,
             allowNull: true
         },
+        password_reset_token: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        password_reset_expires: {
+            type: DataTypes.DATE,
+            allowNull: true
+        },
+        reditus_gr_id: {
+            type: DataTypes.STRING,
+            allowNull: true,
+        },
+        reditus_affiliate_slug: {
+            type: DataTypes.STRING,
+            allowNull: true,
+        },
+
     }, {
         tableName: "users",
         timestamps: true,

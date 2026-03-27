@@ -11,7 +11,9 @@ const subscriptionModel = (sequelize, DataTypes) => {
         status: { type: DataTypes.STRING, allowNull: false },
         span: { type: DataTypes.STRING, allowNull: true },
         amount: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
-        provider: { type: DataTypes.STRING, allowNull: true }
+        provider: { type: DataTypes.STRING, allowNull: true },
+        paystack_authorization_code: { type: DataTypes.STRING(255), allowNull: true },
+        paystack_customer_code: { type: DataTypes.STRING(255), allowNull: true },
     }, {
         tableName: "subscriptions",
         timestamps: true,

@@ -42,6 +42,34 @@ const paymentModel = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+    payment_method: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    selected_plan: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    installment_label: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    installment_number: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    total_installments: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    due_date: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    paystack_parent_reference: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
   }, {
     tableName: "payments",
     timestamps: true,

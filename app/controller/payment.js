@@ -1,8 +1,19 @@
 import db from "../../db.js";
 import Stripe from 'stripe';
 import { sendInvoiceEmail } from '../helper/sendEmail.js';
+import { getStandardPricing } from '../utils/pricing.js';
+import { normalizePlan, buildManualEftInstallments } from '../utils/installmentSchedule.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+const normalizePaymentStatusInput = (status) => {
+    const normalized = String(status || '').toLowerCase().trim();
+    if (!normalized) return '';
+    if (normalized === 'sent') return 'under_review';
+    if (['success', 'successed', 'succeeded'].includes(normalized)) return 'succeeded';
+    if (['under review', 'under_review', 'review'].includes(normalized)) return 'under_review';
+    return normalized;
+};
 
 /**
  * Creates a checkout session with immediate first payment and quarterly subscription
@@ -49,9 +60,10 @@ const createCheckoutSession = async (req, res) => {
             return res.status(404).json({ success: false, error: 'User not found' });
         }
 
-        // Get payment amounts from environment variables
-        const firstPaymentAmount = parseInt(process.env.FIRST_PAYMENT_AMOUNT) || 333;
-        const quarterlyPaymentAmount = parseInt(process.env.QUARTERLY_PAYMENT_AMOUNT) || 222;
+        // Get payment amounts from DB (standard pricing), fallback to env
+        const pricing = await getStandardPricing();
+        const firstPaymentAmount = Math.round(Number(pricing.firstPaymentAmountUSD)) || 333;
+        const quarterlyPaymentAmount = Math.round(Number(pricing.quarterlyPaymentAmountUSD)) || 222;
 
         // Use an existing Stripe customer ID if available, otherwise create a new one
         let stripeCustomerId = user.stripe_customer_id;
@@ -439,22 +451,67 @@ const notifyPaymentCompletion = async (req, res) => {
 
 const createManualEft = async (req, res) => {
     try {
-        const { courseId, amount, currency } = req.body;
+        const { courseId, currency, selectedPlan, amount, recurringAmount } = req.body;
         const userId = req.user ? req.user.id : req.body.userId;
-
-        const payment = await db.payment.create({
+        const standardPricing = await getStandardPricing();
+        const course = courseId ? await db.courses.findByPk(courseId) : null;
+        const schedule = buildManualEftInstallments({
+            selectedPlan,
+            course,
+            standardPricing,
+            currency: currency || 'usd',
+            recurringAmountOverride: recurringAmount
+        });
+        const requestedAmount = Number(amount);
+        if (Number.isFinite(requestedAmount) && requestedAmount > 0 && schedule.length > 0) {
+            schedule[0].amount = requestedAmount;
+        }
+        const paymentRows = schedule.map((item) => ({
             user_id: userId,
             course_id: courseId,
-            amount: amount || 333,
-            currency: currency || 'usd',
-            status: 'initiated',
-            payment_type: 'subscription'
-        });
+            amount: item.amount,
+            currency: item.currency,
+            status: item.status,
+            payment_type: 'subscription',
+            payment_method: 'manual_eft',
+            selected_plan: item.selectedPlan,
+            installment_label: item.installmentLabel,
+            installment_number: item.installmentNumber,
+            total_installments: item.totalInstallments,
+            due_date: item.dueDate,
+        }));
+        const createdPayments = await db.payment.bulkCreate(paymentRows);
+        const firstPaymentRecord = createdPayments.find((p) => p.installment_number === 1) || createdPayments[0];
 
         res.status(200).json({
             success: true,
-            paymentId: payment.id,
-            message: 'Manual EFT payment initiated'
+            paymentId: firstPaymentRecord.id,
+            message: 'Manual EFT payment initiated',
+            duePayment: {
+                amount: firstPaymentRecord.amount,
+                currency: firstPaymentRecord.currency,
+                selectedPlan: firstPaymentRecord.selected_plan,
+                installmentLabel: firstPaymentRecord.installment_label,
+                installmentNumber: firstPaymentRecord.installment_number,
+                totalInstallments: firstPaymentRecord.total_installments,
+                dueDate: firstPaymentRecord.due_date
+            },
+            installmentSchedule: createdPayments
+                .sort((a, b) => (a.installment_number || 0) - (b.installment_number || 0))
+                .map((p) => ({
+                    paymentId: p.id,
+                    amount: p.amount,
+                    currency: p.currency,
+                    status: p.status,
+                    installmentLabel: p.installment_label,
+                    installmentNumber: p.installment_number,
+                    totalInstallments: p.total_installments,
+                    dueDate: p.due_date
+                })),
+            followUpSchedule: createdPayments
+                .filter((p) => Number(p.installment_number || 0) > 1)
+                .sort((a, b) => (a.installment_number || 0) - (b.installment_number || 0))
+                .map((p) => p.due_date)
         });
     } catch (error) {
         console.error('Create Manual EFT Error:', error);
@@ -462,10 +519,38 @@ const createManualEft = async (req, res) => {
     }
 };
 
+const markPaymentSentByUser = async (req, res) => {
+    try {
+        const { paymentId } = req.params;
+        const userId = req.user?.id;
+        const payment = await db.payment.findByPk(paymentId);
+        if (!payment) {
+            return res.status(404).json({ error: 'Payment not found' });
+        }
+        if (Number(payment.user_id) !== Number(userId)) {
+            return res.status(403).json({ error: 'You can only update your own payment records' });
+        }
+        if (payment.payment_method !== 'manual_eft') {
+            return res.status(400).json({ error: 'Only manual EFT payments can be marked as sent' });
+        }
+        const currentStatus = normalizePaymentStatusInput(payment.status);
+        if (!['pending', 'initiated', 'declined'].includes(currentStatus)) {
+            return res.status(400).json({ error: `This payment cannot be marked as sent from status: ${payment.status}` });
+        }
+
+        await payment.update({ status: 'under_review' });
+        return res.status(200).json({ success: true, message: 'Payment marked as sent. Status is now under review.' });
+    } catch (error) {
+        console.error('Mark Payment Sent Error:', error);
+        return res.status(500).json({ error: 'Failed to mark payment as sent', details: error.message });
+    }
+};
+
 const updatePaymentStatus = async (req, res) => {
     try {
         const { paymentId } = req.params;
         const { status } = req.body;
+        const normalizedStatus = normalizePaymentStatusInput(status);
 
         const payment = await db.payment.findByPk(paymentId);
 
@@ -473,11 +558,15 @@ const updatePaymentStatus = async (req, res) => {
             return res.status(404).json({ error: 'Payment not found' });
         }
 
-        await payment.update({ status: status });
+        if (!normalizedStatus) {
+            return res.status(400).json({ error: 'Status is required' });
+        }
+
+        await payment.update({ status: normalizedStatus });
 
         res.status(200).json({
             success: true,
-            message: `Payment status updated to ${status}`
+            message: `Payment status updated to ${normalizedStatus}`
         });
     } catch (error) {
         console.error('Update Payment Status Error:', error);
@@ -491,7 +580,7 @@ const getAllPayments = async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
-        const { search, date } = req.query;
+        const { search, date, status } = req.query;
 
         const whereClause = {};
         const userWhereClause = {};
@@ -513,6 +602,10 @@ const getAllPayments = async (req, res) => {
             userWhereClause.email = {
                 [db.Sequelize.Op.like]: `%${search}%`
             };
+        }
+
+        if (status) {
+            whereClause.status = status;
         }
 
         const { count, rows } = await db.payment.findAndCountAll({
@@ -585,7 +678,22 @@ const getUserPayments = async (req, res) => {
             order: [['created_at', 'DESC']],
             limit: limit,
             offset: offset,
-            attributes: ['id', 'amount', 'currency', 'status', 'payment_type', 'created_at', 'invoice_pdf_url', 'invoice_number']
+            attributes: [
+                'id',
+                'amount',
+                'currency',
+                'status',
+                'payment_type',
+                'payment_method',
+                'selected_plan',
+                'installment_label',
+                'installment_number',
+                'total_installments',
+                'due_date',
+                'created_at',
+                'invoice_pdf_url',
+                'invoice_number'
+            ]
         });
 
         res.status(200).json({
@@ -604,4 +712,4 @@ const getUserPayments = async (req, res) => {
     }
 };
 
-export { createCheckoutSession, handleSubscriptionWebhook, cancelSubscription, getSubscriptionDetails, sendInvoiceByPaymentId, notifyPaymentCompletion, createManualEft, updatePaymentStatus, getAllPayments, deletePayment, getUserPayments }; 
+export { createCheckoutSession, handleSubscriptionWebhook, cancelSubscription, getSubscriptionDetails, sendInvoiceByPaymentId, notifyPaymentCompletion, createManualEft, markPaymentSentByUser, updatePaymentStatus, getAllPayments, deletePayment, getUserPayments }; 

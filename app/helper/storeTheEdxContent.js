@@ -263,6 +263,79 @@ async function generateUniqueCourseKey(course) {
   return uniqueKey;
 }
 
+async function ensureDefaultEdxCourseCostConfig({ providerId, courseId }) {
+  if (!providerId || !courseId || !db.course_cost_config) return;
+
+  const existingConfig = await db.course_cost_config.findOne({
+    where: {
+      provider_id: providerId,
+      course_id: courseId,
+      country_code: "DEFAULT",
+    },
+    raw: true,
+  });
+
+  // Keep admin-edited pricing intact; only seed defaults for new courses.
+  if (existingConfig) return;
+
+  // Reuse provider-level default config (course_id = null) when available.
+  const providerDefaultConfig = await db.course_cost_config.findOne({
+    where: {
+      provider_id: providerId,
+      course_id: null,
+      country_code: "DEFAULT",
+    },
+    raw: true,
+    order: [["updated_at", "DESC"]],
+  });
+
+  if (providerDefaultConfig) {
+    const reusableFields = [
+      "self_cost",
+      "self_caption",
+      "interactive_cost",
+      "interactive_caption",
+      "payment_type_self",
+      "payment_type_interactive",
+      "payment_option_once_off",
+      "payment_option_thirty_sixty",
+      "payment_option_monthly_11",
+      "payment_option_quarterly_3",
+      "payment_once_off_amount",
+      "payment_first_30_60",
+      "payment_second_30_60",
+      "payment_third_30_60",
+      "payment_first_monthly_11",
+      "payment_first_quarterly_3",
+    ];
+
+    const clonedConfig = {};
+    for (const field of reusableFields) {
+      if (providerDefaultConfig[field] !== undefined) {
+        clonedConfig[field] = providerDefaultConfig[field];
+      }
+    }
+
+    await db.course_cost_config.create({
+      provider_id: providerId,
+      course_id: courseId,
+      country_code: "DEFAULT",
+      ...clonedConfig,
+    });
+    return;
+  }
+
+  // Fallback default when no provider-level config exists.
+  await db.course_cost_config.create({
+    provider_id: providerId,
+    course_id: courseId,
+    country_code: "DEFAULT",
+    self_cost: 333,
+    interactive_cost: 222,
+    payment_once_off_amount: 999,
+  });
+}
+
 async function fetchAndStoreEdxCourses(req, res) {
   let totalInserted = 0, totalUpdated = 0, totalSkipped = 0;
   const results = [];
@@ -397,51 +470,28 @@ async function fetchAndStoreEdxCourses(req, res) {
           outcome: selectedRun?.outcome || null,
           type_id: courseTypes?.id || null,
         };
-        // Use course.uuid as unique identifier
-        const whereClause = { where: { key: uniqueKey } };
-        let courseRecord = await db.courses.findOne(whereClause);
+        // Resolve existing row by edX uuid first (stable id), then by generated key — key-only
+        // lookup misses rows whose key changed between syncs and caused duplicate uuid on insert.
+        let courseRecord = null;
+        if (course.uuid) {
+          courseRecord = await db.courses.findOne({ where: { uuid: course.uuid } });
+        }
         if (!courseRecord) {
-          // Insert new course
+          courseRecord = await db.courses.findOne({ where: { key: uniqueKey } });
+        }
+        if (!courseRecord) {
           courseRecord = await db.courses.create({ ...courseData });
           totalInserted++;
-          // logger.info({ 
-          //    msg: 'Course Inserted', 
-          //    uuid: course.uuid, 
-          //    title: course.title 
-          //  });
           results.push({ course_id: course.uuid, title: course.title, action: 'inserted' });
         } else {
-          // Only update key if it is currently null
-          if (courseRecord.key === null || courseRecord.key === undefined) {
-            // Only update the key field
-            await db.courses.update({ key: uniqueKey }, { where: { id: courseRecord.id } });
-            totalUpdated++;
-            // logger.info({ 
-            //    msg: 'Course Updated', 
-            //    uuid: course.uuid, 
-            //    title: course.title 
-            //  });
-            results.push({ course_id: course.uuid, title: course.title, action: 'key_updated' });
-          }
-          // Check if update is needed
-          // let needsUpdate = false;
-          // for (const key of Object.keys(courseData)) {
-          //   const existingValue = courseRecord[key];
-          //   const newValue = courseData[key];
-          //   if (JSON.stringify(existingValue) !== JSON.stringify(newValue)) {
-          //     needsUpdate = true;
-          //     break;
-          //   }
-          // }
-          // if (needsUpdate) {
-          //   await db.courses.update(courseData, { where: { id: courseRecord.id } });
-          //   totalUpdated++;
-          //   results.push({ course_id: course.uuid, title: course.title, action: 'updated' });
-          // } else {
-          //   totalSkipped++;
-          //   results.push({ course_id: course.uuid, title: course.title, action: 'skipped' });
-          // } 
+          await courseRecord.update(courseData);
+          totalUpdated++;
+          results.push({ course_id: course.uuid, title: course.title, action: 'updated' });
         }
+        await ensureDefaultEdxCourseCostConfig({
+          providerId: edxProviderId,
+          courseId: courseRecord.id,
+        });
 
         // After creating or updating a course, if staffIds exist, create staff_course records
         const staffIds = await extractStaffFields(staffArr);
@@ -482,6 +532,10 @@ async function fetchAndStoreEdxCourses(req, res) {
                   description: program.description || null,
                   content_type: program.content_type,
                   owners: ownerIds,
+                });
+                await ensureDefaultEdxCourseCostConfig({
+                  providerId: edxProviderId,
+                  courseId: programCourseRecord.id,
                 });
               }else{
                 const uniqueKey = await generateUniqueCourseKey(program);

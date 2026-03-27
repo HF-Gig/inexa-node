@@ -8,7 +8,10 @@ import { sendPasswordResetMail } from "./sendPasswordResetMail.js";
 export async function signup(req, res) {
     try {
         const { user } = db;
-        const { email } = req.body;
+        let { email } = req.body;
+        const reditus_gr_id = typeof req.body.reditus_gr_id === 'string' ? req.body.reditus_gr_id.trim() : null;
+        const reditus_affiliate_slug = typeof req.body.reditus_affiliate_slug === 'string' ? req.body.reditus_affiliate_slug.trim() : null;
+        email = typeof email === 'string' ? email.trim() : '';
 
         // Input validation
         if (!email) {
@@ -35,6 +38,14 @@ export async function signup(req, res) {
             raw: true
         });
 
+        if (existingUser && existingUser.email_verification && existingUser.password) {
+            return res.status(400).json({
+                message: "This email is already registered. Please sign in instead.",
+                status: false,
+                statusCode: 400
+            });
+        }
+
         const verificationToken = jwt.sign(
             { email },
             process.env.JWT_SECRET,
@@ -48,22 +59,33 @@ export async function signup(req, res) {
                 password: null,
                 first_name: null,
                 last_name: null,
-                email_verification: false
+                email_verification: false,
+                reditus_gr_id: reditus_gr_id || null,
+                reditus_affiliate_slug: reditus_affiliate_slug || null,
+            });
+        } else {
+            // Update attribution if present (keep existing if already stored)
+            const updateObj = {};
+            if (reditus_gr_id && !existingUser.reditus_gr_id) updateObj.reditus_gr_id = reditus_gr_id;
+            if (reditus_affiliate_slug && !existingUser.reditus_affiliate_slug) updateObj.reditus_affiliate_slug = reditus_affiliate_slug;
+            if (Object.keys(updateObj).length > 0) {
+                await user.update(updateObj, { where: { email } });
+            }
+            await sendSignupMail({ ...req.body, verifyUrl: verificationLink });
+
+            return res.status(200).json({
+                message: "Verification email re-sent successfully.",
+                status: true,
+                statusCode: 200
             });
         }
 
         await sendSignupMail({ ...req.body, verifyUrl: verificationLink });
 
-        const message = existingUser
-            ? "Verification email sent successfully"
-            : "Registration successful. Please check your email for verification.";
-
-        const statusCode = existingUser ? 200 : 201;
-
-        return res.status(statusCode).json({
-            message,
+        return res.status(201).json({
+            message: "Registration successful. Please check your email for verification.",
             status: true,
-            statusCode
+            statusCode: 201
         });
 
     } catch (error) {
@@ -120,10 +142,16 @@ export async function verifyEmail(req, res) {
 
 export async function completeProfile(req, res) {
     try {
-        const { firstName, lastName, phone, password, country } = req.body;
+        const firstName = typeof req.body.firstName === 'string' ? req.body.firstName.trim() : '';
+        const lastName = typeof req.body.lastName === 'string' ? req.body.lastName.trim() : '';
+        const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
+        const password = typeof req.body.password === 'string' ? req.body.password.trim() : '';
+        const country = req.body.country;
+        const reditus_gr_id = typeof req.body.reditus_gr_id === 'string' ? req.body.reditus_gr_id.trim() : null;
+        const reditus_affiliate_slug = typeof req.body.reditus_affiliate_slug === 'string' ? req.body.reditus_affiliate_slug.trim() : null;
         const { user } = db;
 
-        let email = req.body.email;
+        let email = typeof req.body.email === 'string' ? req.body.email.trim() : '';
         const authHeader = req.headers.authorization;
         const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : (req.body.verified_token || req.body.token);
 
@@ -166,7 +194,9 @@ export async function completeProfile(req, res) {
             last_name: lastName,
             phone,
             password: hashedPassword,
-            country
+            country,
+            ...(reditus_gr_id ? { reditus_gr_id } : {}),
+            ...(reditus_affiliate_slug ? { reditus_affiliate_slug } : {}),
         };
         await user.update(userObj, { where: { email } });
 
@@ -216,7 +246,7 @@ export async function login(req, res) {
 
         if (!userRecord) {
             return res.status(401).json({
-                message: "User not found!",
+                message: "This email ID does not exist",
                 status: false,
                 statusCode: 401
             });

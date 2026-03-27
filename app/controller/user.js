@@ -237,9 +237,16 @@ export async function deleteUser(req, res) {
       });
     }
 
-    // Delete user
-    await user.destroy({
-      where: { email }
+    const userId = existingUser.id;
+    await db.sequelize.transaction(async (t) => {
+      await db.userFavorite.destroy({
+        where: { user_id: userId },
+        transaction: t
+      });
+      await db.payment.destroy({ where: { user_id: userId }, transaction: t });
+      await db.subscription.destroy({ where: { user_id: userId }, transaction: t });
+      await db.enquiry.destroy({ where: { user_id: userId }, transaction: t });
+      await user.destroy({ where: { id: userId }, transaction: t });
     });
 
     return res.status(200).json({
@@ -286,9 +293,22 @@ export async function deleteUserAdmin(req, res) {
       });
     }
 
-    // Delete user
-    await user.destroy({
-      where: { id }
+    // Delete dependent rows first (foreign key constraints)
+    const userId = existingUser.id;
+
+    await db.sequelize.transaction(async (t) => {
+      await db.userFavorite.destroy({
+        where: { user_id: userId },
+        transaction: t
+      });
+
+      // These may not always have FK constraints, but deleting them prevents orphans.
+      await db.payment.destroy({ where: { user_id: userId }, transaction: t });
+      await db.subscription.destroy({ where: { user_id: userId }, transaction: t });
+      await db.enquiry.destroy({ where: { user_id: userId }, transaction: t });
+
+      // Delete user
+      await user.destroy({ where: { id: userId }, transaction: t });
     });
 
     return res.status(200).json({

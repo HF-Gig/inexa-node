@@ -213,6 +213,74 @@ const courseDataModel = (sequelize, DataTypes) => {
             type: DataTypes.STRING,
             allowNull: true,
         },
+        payment_option_once_off: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: true,
+        },
+        payment_option_thirty_sixty: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: true,
+        },
+        payment_option_monthly_11: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: true,
+        },
+        payment_option_quarterly_3: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: true,
+        },
+        payment_first_30_60: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+        },
+        payment_second_30_60: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+        },
+        payment_third_30_60: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+        },
+        payment_first_monthly_11: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+        },
+        payment_first_quarterly_3: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+        },
+        first_payment: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+        },
+        quarterly_payment: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+        },
+        program_card_title: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+        },
+        program_card_subtitle: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+        },
+        program_card_bullets: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+        },
+        program_card_caption: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+        },
+        program_card_info_url: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+        },
     }, {
         tableName: "courses",
         timestamps: true,

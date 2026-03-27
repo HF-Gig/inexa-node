@@ -7,9 +7,83 @@ import { v4 as uuidv4 } from 'uuid';
 import getUpload from '../middleware/upload.js';
 import { uploadLogo } from '../helper/fileUpload.js';
 import { formatDate } from '../helper/common.js';
+import { getDateRangeFilter } from '../helper/getDateRangeFilter.js';
 
 // Cache for popular courses
 const popularCoursesCache = new Map();
+
+const normalizeCountryCode = (value) => {
+  if (!value) return null;
+  return String(value).trim().toUpperCase();
+};
+
+export const applyCountrySpecificCosts = async (courseData, countryCode) => {
+  const providerId = courseData?.course_provider_id;
+  const courseId = courseData?.id;
+  if (!providerId || !db.course_cost_config) {
+    return courseData;
+  }
+
+  const normalizedCountryCode = normalizeCountryCode(countryCode);
+  let config = null;
+
+  if (normalizedCountryCode && courseId) {
+    config = await db.course_cost_config.findOne({
+      where: { provider_id: providerId, course_id: courseId, country_code: normalizedCountryCode },
+      raw: true,
+    });
+  }
+
+  if (!config && courseId) {
+    config = await db.course_cost_config.findOne({
+      where: { provider_id: providerId, course_id: courseId, country_code: "DEFAULT" },
+      raw: true,
+    });
+  }
+
+  if (!config && normalizedCountryCode) {
+    config = await db.course_cost_config.findOne({
+      where: { provider_id: providerId, course_id: null, country_code: normalizedCountryCode },
+      raw: true,
+    });
+  }
+
+  if (!config) {
+    config = await db.course_cost_config.findOne({
+      where: { provider_id: providerId, course_id: null, country_code: "DEFAULT" },
+      raw: true,
+    });
+  }
+
+  if (!config) return courseData;
+
+  const mappedFields = [
+    "self_cost",
+    "self_caption",
+    "interactive_cost",
+    "interactive_caption",
+    "payment_type_self",
+    "payment_type_interactive",
+    "payment_option_once_off",
+    "payment_option_thirty_sixty",
+    "payment_option_monthly_11",
+    "payment_option_quarterly_3",
+    "payment_once_off_amount",
+    "payment_first_30_60",
+    "payment_second_30_60",
+    "payment_third_30_60",
+    "payment_first_monthly_11",
+    "payment_first_quarterly_3",
+  ];
+
+  for (const field of mappedFields) {
+    if (config[field] !== null && config[field] !== undefined && config[field] !== "") {
+      courseData[field] = config[field];
+    }
+  }
+
+  return courseData;
+};
 
 // Helper function to get weeks range based on duration
 function getWeeksRange(duration) {
@@ -64,6 +138,16 @@ export async function getCourses(req, res) {
     const offset = (page - 1) * pageSize;
 
     const where = {};
+
+    // Date range filters
+    const createdAtFilter = getDateRangeFilter(req.query.created_from, req.query.created_to);
+    const updatedAtFilter = getDateRangeFilter(req.query.updated_from, req.query.updated_to);
+    if (createdAtFilter) {
+      where.createdAt = createdAtFilter;
+    }
+    if (updatedAtFilter) {
+      where.updatedAt = updatedAtFilter;
+    }
 
     // Content type filter
     const contentType = req.query.content_type || 'both';
@@ -169,17 +253,54 @@ export async function getCourses(req, res) {
     if (req.query.search) {
       const q = req.query.search.toLowerCase();
 
-      where[Op.or] = [
+      const searchConditions = [
         Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('title')), {
           [Op.like]: `%${q}%`
         }),
         Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('short_description')), {
           [Op.like]: `%${q}%`
         }),
+        Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('breakdown_description')), {
+          [Op.like]: `%${q}%`
+        }),
+        Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('card_short')), {
+          [Op.like]: `%${q}%`
+        }),
         Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('skills')), {
           [Op.like]: `%${q}%`
         })
       ];
+
+      // Include subjects: match courses whose subject titles/slugs contain the search term
+      const matchingSubjects = await db.subject.findAll({
+        where: {
+          status: 1,
+          [Op.or]: [
+            Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('title')), { [Op.like]: `%${q}%` }),
+            Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('slug')), { [Op.like]: `%${q}%` })
+          ]
+        },
+        attributes: ['id'],
+        raw: true
+      });
+
+      if (matchingSubjects.length > 0) {
+        const subjectIdConditions = matchingSubjects
+          .map(s => {
+            const id = Number(s.id);
+            if (!Number.isFinite(id)) return null;
+            // Use the actual column name; Sequelize will apply the correct alias
+            return `JSON_CONTAINS(subjects, CAST(${id} AS JSON), '$')`;
+          })
+          .filter(Boolean)
+          .join(' OR ');
+
+        if (subjectIdConditions) {
+          searchConditions.push(Sequelize.literal(`(${subjectIdConditions})`));
+        }
+      }
+
+      where[Op.or] = searchConditions;
     }
 
     // Sorting
@@ -188,28 +309,33 @@ export async function getCourses(req, res) {
     const order = [[orderBy, orderDir]];
 
     if (req.query.search) {
+      // Safely escape single quotes for use inside the CASE literal
+      const searchLower = String(req.query.search).toLowerCase().replace(/'/g, "''");
+
       order.unshift([
         Sequelize.literal(`CASE
-          WHEN LOWER(title) LIKE '${req.query.search.toLowerCase()}%' THEN 1
-          WHEN LOWER(title) LIKE '%${req.query.search.toLowerCase()}%' THEN 2
-          WHEN LOWER(short_description) LIKE '%${req.query.search.toLowerCase()}%' THEN 3
-          WHEN JSON_CONTAINS(skills, '["${req.query.search.toLowerCase()}"]') THEN 4
-          ELSE 5 END`),
+          WHEN LOWER(title) LIKE '${searchLower}%' THEN 1
+          WHEN LOWER(title) LIKE '%${searchLower}%' THEN 2
+          WHEN LOWER(short_description) LIKE '%${searchLower}%' THEN 3
+          WHEN LOWER(breakdown_description) LIKE '%${searchLower}%' THEN 4
+          WHEN JSON_CONTAINS(skills, '["${searchLower}"]') THEN 5
+          ELSE 6 END`),
         'ASC'
       ]);
     }
 
     const isLight = req.query.light === '1' || req.query.light === 'true';
     const attributes = isLight
-      ? ['id', 'title', 'key', 'status', 'owners', 'type_id', 'short_description', 'skills', 'price']
+      ? ['id', 'title', 'key', 'status', 'owners', 'type_id', 'short_description', 'breakdown_description', 'subjects', 'skills', 'price']
       : [
         'id', 'key', 'owners', 'title', 'image_url', 'weeks_to_complete',
         'course_level', 'start_date', 'pacing_type', 'content_type',
         'uuid', 'type_id', 'cobranding', 'course_provider_id', 'status', 'short_description',
-        'skills', 'createdAt', 'updatedAt', 'price'
+        'skills', 'breakdown_description', 'subjects', 'createdAt', 'updatedAt', 'price'
       ];
 
     where.status = 1;
+
     const { count, rows: courses } = await db.courses.findAndCountAll({
       attributes,
       where,
@@ -762,6 +888,7 @@ const parseArrayField = (val) => {
 export async function getCoursesDetail(req, res) {
   try {
     const { courseId } = req.params;
+    const countryCode = req.query.countryCode || req.query.country_code;
     const course = await db.courses.findOne({
       where: { id: courseId }
     });
@@ -777,6 +904,7 @@ export async function getCoursesDetail(req, res) {
     //console.log("Using course data:", course);
 
     const courseData = course.toJSON();
+    await applyCountrySpecificCosts(courseData, countryCode);
 
     if (courseData.facilitator && Array.isArray(courseData.facilitator) && courseData.facilitator.length > 0) {
       // Fetch all facilitators whose IDs are in the array
@@ -881,6 +1009,19 @@ export async function getCoursesDetail(req, res) {
         courseData.total_courses = 0;
       }
     }
+
+    const hasCustomPricing = courseData.first_payment != null && courseData.quarterly_payment != null
+      && Number(courseData.first_payment) > 0 && Number(courseData.quarterly_payment) > 0;
+    if (hasCustomPricing) {
+      courseData.pricing = {
+        type: 'custom',
+        first_payment: Number(courseData.first_payment),
+        quarterly_payment: Number(courseData.quarterly_payment),
+      };
+    } else {
+      courseData.pricing = { type: 'subscription' };
+    }
+
     res.json({
       data: courseData,
       status: true,
@@ -895,6 +1036,7 @@ export async function getCoursesDetail(req, res) {
 export async function getCourseDetailBySlug(req, res) {
   try {
     const { slug } = req.params;
+    const countryCode = req.query.countryCode || req.query.country_code;
     const course = await db.courses.findOne({
       where: { key: slug }
     });
@@ -908,6 +1050,7 @@ export async function getCourseDetailBySlug(req, res) {
     }
 
     const courseData = course.toJSON();
+    await applyCountrySpecificCosts(courseData, countryCode);
 
     // Parse facilitator field and fetch facilitator data
     if (courseData.facilitator) {
@@ -1113,6 +1256,20 @@ export async function getCourseDetailBySlug(req, res) {
       image: courseProviderImage
     };
 
+    // Apply standard or custom pricing for frontend (fix: synced edX programs get standard pricing)
+    const hasCustomPricing = courseData.first_payment != null && courseData.quarterly_payment != null
+      && Number(courseData.first_payment) > 0 && Number(courseData.quarterly_payment) > 0;
+    if (hasCustomPricing) {
+      courseData.pricing = {
+        type: 'custom',
+        first_payment: Number(courseData.first_payment),
+        quarterly_payment: Number(courseData.quarterly_payment),
+      };
+    } else {
+      // edX and synced programs without custom pricing use standard subscription pricing
+      courseData.pricing = { type: 'subscription' };
+    }
+
     // console.log("Sending courseData: ", courseData);
 
     res.json({
@@ -1148,9 +1305,17 @@ export async function createCourse(req, res) {
       'interactive_caption',
       'payment_type_self',
       'payment_type_interactive',
+      'first_payment',
+      'quarterly_payment',
+      // DECIMAL columns: MySQL rejects '' so we must normalize to null
+      'payment_first_30_60',
+      'payment_second_30_60',
+      'payment_third_30_60',
+      'payment_first_monthly_11',
+      'payment_first_quarterly_3',
     ];
     fieldsToCheck.forEach(field => {
-      if (req.body[field] === 'null' || req.body[field] === '' || !req.body[field]) {
+      if (req.body[field] === 'null' || req.body[field] === '' ||req.body[field] === null ||req.body[field] === undefined) {
         req.body[field] = null;
       }
     });
@@ -1301,7 +1466,14 @@ export async function updateCourse(req, res) {
       'interactive_cost',
       'interactive_caption',
       'payment_type_self',
-      'payment_type_interactive'
+      'payment_type_interactive',
+      'first_payment',
+      'quarterly_payment',
+      'payment_first_30_60',
+      'payment_second_30_60',
+      'payment_third_30_60',
+      'payment_first_monthly_11',
+      'payment_first_quarterly_3',
     ];
 
     if (req.body.price) {
@@ -1327,7 +1499,7 @@ export async function updateCourse(req, res) {
     }
 
     fieldsToCheck.forEach(field => {
-      if (req.body[field] === 'null' || req.body[field] === '' || !req.body[field]) {
+      if (req.body[field] === 'null' ||req.body[field] === '' ||req.body[field] === null ||req.body[field] === undefined) {
         req.body[field] = null;
       }
     });

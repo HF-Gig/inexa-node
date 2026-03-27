@@ -1,9 +1,9 @@
 {
   "development": {
-    "username": "devuser",
-    "password": "O!7h98[p=1OX",
+    "username": "root",
+    "password": "root",
     "database": "inexa_db",
-    "host": "82.29.164.77",
+    "host": "localhost",
     "port": 3306,
     "dialect": "mysql"
   },

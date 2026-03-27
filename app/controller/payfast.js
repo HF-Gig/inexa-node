@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import db from "../../db.js";
+import { getStandardPricing } from "../utils/pricing.js";
 
 const signatureOrder = [
     'merchant_id', 'merchant_key', 'return_url', 'cancel_url', 'notify_url',
@@ -66,7 +67,8 @@ export async function InitPayfastPayment(req, res) {
 
         const orderId = `ORDER-${Date.now()}-${courseId}`;
 
-        const amount = process.env.FIRST_PAYMENT_AMOUNT || 333;
+        const pricing = await getStandardPricing();
+        const amount = pricing.firstPaymentAmountUSD;
 
         const paymentData = {
             merchant_id: process.env.PAYFAST_MERCHANT_ID,
