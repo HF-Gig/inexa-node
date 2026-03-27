@@ -488,7 +488,7 @@ export async function getCourses(req, res) {
 
     return res.json(formatPaginatedResponse({ data: resultCourses, pagination }));
   } catch (error) {
-    //console.log("error in getcourses======>", error);
+    console.log("error in getcourses======>", error);
     return res.json({ message: "Internal Server Error", status: false, statusCode: 500 });
   }
 }
@@ -718,7 +718,7 @@ export async function getPopularCourses(req, res) {
 
     return res.json(data);
   } catch (error) {
-    //console.error('Error fetching popular courses:', error);
+    console.error('Error fetching popular courses:', error);
     return res.json({ message: "Internal Server Error", status: false, statusCode: 500 });
   }
 }
@@ -1028,7 +1028,7 @@ export async function getCoursesDetail(req, res) {
       statusCode: 200
     });
   } catch (error) {
-    // console.error('error in getCoursesDetail======>', error);
+    console.error('error in getCoursesDetail======>', error);
     return res.json({ message: 'Internal Server Error', status: false, statusCode: 500 });
   }
 }
@@ -1278,7 +1278,7 @@ export async function getCourseDetailBySlug(req, res) {
       statusCode: 200
     });
   } catch (error) {
-    // console.error('error in getCoursesDetail======>', error);
+    console.error('error in getCoursesDetail======>', error);
     return res.json({ message: 'Internal Server Error', status: false, statusCode: 500 });
   }
 }
@@ -1439,7 +1439,7 @@ export async function updateCobranding(req, res) {
 
     return res.json({ message: 'Cobranding updated successfully', status: true, statusCode: 200 });
   } catch (error) {
-    //console.error('error in updateCobranding======>', error);
+    console.error('error in updateCobranding======>', error);
     return res.json({ message: 'Internal Server Error', status: false, statusCode: 500 });
   }
 }
@@ -1621,7 +1621,7 @@ export async function deleteCourse(req, res) {
     const deleted = await db.courses.destroy({ where: { uuid: courseId } });
     return res.json({ message: 'Course deleted successfully', status: true, statusCode: 200, data: deleted });
   } catch (error) {
-    //console.error('error in deleteCourse======>', error);
+    console.error('error in deleteCourse======>', error);
     return res.json({ message: 'Internal Server Error', status: false, statusCode: 500 });
   }
 }

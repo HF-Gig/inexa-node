@@ -246,7 +246,7 @@ export async function login(req, res) {
 
         if (!userRecord) {
             return res.status(401).json({
-                message: "This email ID does not exist",
+                message: "This email address doesn't exist",
                 status: false,
                 statusCode: 401
             });
