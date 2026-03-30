@@ -32,7 +32,7 @@ function extractFieldsFromArray(arr, fields) {
   });
 }
 
-async function upsertOrganization(org) {
+async function upsertOrganization(org, silent = false) {
   if (!org) return null;
   const {
     organization_name,
@@ -72,7 +72,7 @@ async function upsertOrganization(org) {
         changes: updateData
       });
 
-      await db.organization.update(updateData, { where: { id: existing.id } });
+      await db.organization.update(updateData, { where: { id: existing.id }, silent });
     } else {
       logger.info({
         msg: 'Start DB NO-OP: Organization (Skipped Update)',
@@ -101,7 +101,7 @@ async function upsertOrganization(org) {
 }
 
 // Helper for staff: extract only required fields, including nested fields
-async function extractStaffFields(staffArr) {
+async function extractStaffFields(staffArr, silent = false) {
   // If it's a string, try to parse it
   let array = staffArr;
   if (typeof array === 'string') {
@@ -135,7 +135,7 @@ async function extractStaffFields(staffArr) {
         organization_id: obj.position.organization_id,
         organization_uuid: obj.position.organization_uuid,
         organization_logo_image_url: obj.position.organization_logo_image_url
-      });
+      }, silent);
     }
 
     if (obj?.position) {
@@ -172,7 +172,7 @@ async function extractStaffFields(staffArr) {
         const newStaff = await db.staff.create(staffData);
         staffUuids.push(newStaff.id);
       } else {
-        const updatedStaff = await db.staff.update(staffData, { where: { uuid: staffData.uuid } });
+        const updatedStaff = await db.staff.update(staffData, { where: { uuid: staffData.uuid }, silent });
         staffUuids.push(existingStaff.id);
       }
     } else {
@@ -204,7 +204,7 @@ function getCurrentOrLatestRun(course_runs) {
 }
 
 // Helper to upsert owners and return their IDs
-async function upsertOwners(ownersArr) {
+async function upsertOwners(ownersArr, silent = false) {
   if (!Array.isArray(ownersArr) || ownersArr.length === 0) return [];
   const ownerIds = [];
   for (const obj of ownersArr) {
@@ -228,7 +228,7 @@ async function upsertOwners(ownersArr) {
         updateData.certificate_logo_image_url = obj.certificate_logo_image_url;
       }
       if (Object.keys(updateData).length > 0) {
-        await db.owner.update(updateData, { where: { id: existing.id } });
+        await db.owner.update(updateData, { where: { id: existing.id }, silent });
       }
       ownerIds.push(existing.id);
     } else {
@@ -271,6 +271,7 @@ async function ensureDefaultEdxCourseCostConfig({ providerId, courseId }) {
       provider_id: providerId,
       course_id: courseId,
       country_code: "DEFAULT",
+      content_type: "all",
     },
     raw: true,
   });
@@ -284,6 +285,7 @@ async function ensureDefaultEdxCourseCostConfig({ providerId, courseId }) {
       provider_id: providerId,
       course_id: null,
       country_code: "DEFAULT",
+      content_type: "all",
     },
     raw: true,
     order: [["updated_at", "DESC"]],
@@ -320,6 +322,7 @@ async function ensureDefaultEdxCourseCostConfig({ providerId, courseId }) {
       provider_id: providerId,
       course_id: courseId,
       country_code: "DEFAULT",
+      content_type: "all",
       ...clonedConfig,
     });
     return;
@@ -330,13 +333,15 @@ async function ensureDefaultEdxCourseCostConfig({ providerId, courseId }) {
     provider_id: providerId,
     course_id: courseId,
     country_code: "DEFAULT",
+    content_type: "all",
     self_cost: 333,
     interactive_cost: 222,
     payment_once_off_amount: 999,
   });
 }
 
-async function fetchAndStoreEdxCourses(req, res) {
+async function fetchAndStoreEdxCourses(req, res, silent = false) {
+  if (!req && !res) silent = true;
   let totalInserted = 0, totalUpdated = 0, totalSkipped = 0;
   const results = [];
   try {
@@ -419,7 +424,7 @@ async function fetchAndStoreEdxCourses(req, res) {
         const selectedRun = getCurrentOrLatestRun(courseRuns);
         let staffArr = selectedRun?.staff;
 
-        const ownerIds = await upsertOwners(course.owners);
+        const ownerIds = await upsertOwners(course.owners, silent);
         // SUBJECTS SYNC
         let subjectIds = [];
         if (Array.isArray(course.subjects)) {
@@ -446,6 +451,7 @@ async function fetchAndStoreEdxCourses(req, res) {
           uuid: course.uuid,
           owners: ownerIds,
           subjects: subjectIds.length > 0 ? subjectIds : null,
+          full_description: course.full_description || null,
           short_description: course.short_description || null,
           content_type: course.content_type,
           title: course.title || null,
@@ -484,7 +490,7 @@ async function fetchAndStoreEdxCourses(req, res) {
           totalInserted++;
           results.push({ course_id: course.uuid, title: course.title, action: 'inserted' });
         } else {
-          await courseRecord.update(courseData);
+          await courseRecord.update(courseData, { silent });
           totalUpdated++;
           results.push({ course_id: course.uuid, title: course.title, action: 'updated' });
         }
@@ -494,7 +500,7 @@ async function fetchAndStoreEdxCourses(req, res) {
         });
 
         // After creating or updating a course, if staffIds exist, create staff_course records
-        const staffIds = await extractStaffFields(staffArr);
+        const staffIds = await extractStaffFields(staffArr, silent);
         if (staffIds && staffIds.length > 0 && courseRecord) {
           for (const staffId of staffIds) {
             const exists = await db.staff_course.findOne({ where: { staff_id: staffId, course_id: courseRecord.id } });
@@ -539,7 +545,7 @@ async function fetchAndStoreEdxCourses(req, res) {
                 });
               }else{
                 const uniqueKey = await generateUniqueCourseKey(program);
-                await programCourseRecord.update({ owners: ownerIds, key: uniqueKey });
+                await programCourseRecord.update({ owners: ownerIds, key: uniqueKey }, { silent });
               }
 
               // Create or update the program, linking to the program's course
@@ -553,7 +559,7 @@ async function fetchAndStoreEdxCourses(req, res) {
               });
               // Set type_id on course
               if (programTypeId) {
-                await programCourseRecord.update({ type_id: programTypeId });
+                await programCourseRecord.update({ type_id: programTypeId }, { silent });
               }
               // Maintain many-to-many relationship (program_course)
               await db.program_course.findOrCreate({
@@ -635,5 +641,5 @@ async function getOwnersByIds(ownersIds) {
 export { fetchAndStoreEdxCourses, getStaffByUuids, getOwnersByIds };
 
 cron.schedule('0 0 * * *', () => {
-  fetchAndStoreEdxCourses();
+  fetchAndStoreEdxCourses(null, null, true);
 });

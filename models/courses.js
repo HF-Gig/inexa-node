@@ -27,6 +27,10 @@ const courseDataModel = (sequelize, DataTypes) => {
             type: DataTypes.TEXT,
             allowNull: true,
         },
+        full_description: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+        },
         short_description: {
             type: DataTypes.TEXT,
             allowNull: true,

@@ -22,6 +22,7 @@ const courseCostConfigModel = (sequelize, DataTypes) => {
       payment_third_30_60: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
       payment_first_monthly_11: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
       payment_first_quarterly_3: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
+      content_type: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "all" },
     },
     {
       tableName: "course_cost_configs",
@@ -31,7 +32,8 @@ const courseCostConfigModel = (sequelize, DataTypes) => {
       indexes: [
         {
           unique: true,
-          fields: ["provider_id", "course_id", "country_code"],
+          fields: ["provider_id", "course_id", "country_code", "content_type"],
+          name: "uniq_provider_course_country_content_type_cost_config"
         },
       ],
     }
