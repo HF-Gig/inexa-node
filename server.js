@@ -23,7 +23,12 @@ dotenv.config();
 const corsOpts = {
   origin: "*",
 };
-app.use(cors(corsOpts));
+
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
 
 // Stripe webhook route: must be before body parsers!
 app.post(
