@@ -24,11 +24,7 @@ const corsOpts = {
   origin: "*",
 };
 
-app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-}));
+app.use(cors());
 
 // Stripe webhook route: must be before body parsers!
 app.post(
