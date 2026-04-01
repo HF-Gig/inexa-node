@@ -121,6 +121,10 @@ export async function verifyEmail(req, res) {
             return res.status(400).json({ message: "Invalid token user", status: false });
         }
 
+        if (existingUser.email_verification) {
+            return res.status(400).json({ message: "Token has expired or already been used", status: false });
+        }
+
         await user.update(
             { email_verification: true },
             { where: { email: decoded.email } }
