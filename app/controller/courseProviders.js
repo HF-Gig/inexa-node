@@ -1,6 +1,7 @@
 import initModels from '../../models/init_models.js';
 import fs from 'fs';
 import path from 'path';
+import { Op } from 'sequelize';
 
 export const createCourseProvider = async (req, res) => {
   try {
@@ -24,8 +25,39 @@ export const createCourseProvider = async (req, res) => {
 export const getCourseProviders = async (req, res) => {
   try {
     const db = await initModels();
-    const providers = await db.course_providers.findAll({ order: [['created_at', 'DESC']] });
-    res.status(200).json({providers});
+    
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const sortBy = req.query.sortBy || 'id';
+    const order = req.query.order || 'DESC';
+    const search = req.query.search || '';
+
+    const offset = (page - 1) * limit;
+
+    let whereClause = {};
+    if (search) {
+      whereClause = {
+        name: {
+          [Op.like]: `%${search}%`
+        }
+      };
+    }
+
+    const { count, rows: providers } = await db.course_providers.findAndCountAll({
+      where: whereClause,
+      order: [[sortBy, order.toUpperCase()]],
+      limit: limit,
+      offset: offset,
+    });
+
+    res.status(200).json({
+      providers,
+      pagination: {
+        totalItems: count,
+        currentPage: page,
+        totalPages: Math.ceil(count / limit)
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch course providers', details: err.message });
   }

@@ -51,8 +51,15 @@ export const getAllContactForms = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.page_size) || 10;
     const offset = (page - 1) * pageSize;
+    const status = req.query.status;
+
+    const where = {};
+    if (status) {
+      where.status = status;
+    }
 
     const { count, rows: contacts } = await db.contact.findAndCountAll({
+      where,
       limit: pageSize,
       offset: offset,
       order: [['create_time', 'DESC']] // Assuming create_time is the field

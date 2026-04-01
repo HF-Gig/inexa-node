@@ -264,80 +264,10 @@ async function generateUniqueCourseKey(course) {
 }
 
 async function ensureDefaultEdxCourseCostConfig({ providerId, courseId }) {
-  if (!providerId || !courseId || !db.course_cost_config) return;
-
-  const existingConfig = await db.course_cost_config.findOne({
-    where: {
-      provider_id: providerId,
-      course_id: courseId,
-      country_code: "DEFAULT",
-      content_type: "all",
-    },
-    raw: true,
-  });
-
-  // Keep admin-edited pricing intact; only seed defaults for new courses.
-  if (existingConfig) return;
-
-  // Reuse provider-level default config (course_id = null) when available.
-  const providerDefaultConfig = await db.course_cost_config.findOne({
-    where: {
-      provider_id: providerId,
-      course_id: null,
-      country_code: "DEFAULT",
-      content_type: "all",
-    },
-    raw: true,
-    order: [["updated_at", "DESC"]],
-  });
-
-  if (providerDefaultConfig) {
-    const reusableFields = [
-      "self_cost",
-      "self_caption",
-      "interactive_cost",
-      "interactive_caption",
-      "payment_type_self",
-      "payment_type_interactive",
-      "payment_option_once_off",
-      "payment_option_thirty_sixty",
-      "payment_option_monthly_11",
-      "payment_option_quarterly_3",
-      "payment_once_off_amount",
-      "payment_first_30_60",
-      "payment_second_30_60",
-      "payment_third_30_60",
-      "payment_first_monthly_11",
-      "payment_first_quarterly_3",
-    ];
-
-    const clonedConfig = {};
-    for (const field of reusableFields) {
-      if (providerDefaultConfig[field] !== undefined) {
-        clonedConfig[field] = providerDefaultConfig[field];
-      }
-    }
-
-    await db.course_cost_config.create({
-      provider_id: providerId,
-      course_id: courseId,
-      country_code: "DEFAULT",
-      content_type: "all",
-      ...clonedConfig,
-    });
-    return;
-  }
-
-  // Fallback default when no provider-level config exists.
-  await db.course_cost_config.create({
-    provider_id: providerId,
-    course_id: courseId,
-    country_code: "DEFAULT",
-    content_type: "all",
-    self_cost: 333,
-    interactive_cost: 222,
-    payment_once_off_amount: 999,
-  });
+  // We no longer manually seed specific courses with default pricing on sync.
+  // The system's 'applyCountrySpecificCosts' implicitly falls back to the 
+  // centralized provider default pricing (course_id: null) when rendering details to users.
+  return;
 }
 
 async function fetchAndStoreEdxCourses(req, res, silent = false) {
