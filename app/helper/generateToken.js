@@ -8,7 +8,7 @@ export async function generateToken(userInfo) {
     };
   
     const options = {
-      expiresIn: "28h", // Token expires in 28 hour
+      expiresIn: "24h", // Token expires in 24 hours
     };
   
     // Sign the JWT token with the payload and secret key

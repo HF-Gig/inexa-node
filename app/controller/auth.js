@@ -38,9 +38,9 @@ export async function signup(req, res) {
             raw: true
         });
 
-        if (existingUser && existingUser.email_verification && existingUser.password) {
+        if (existingUser && existingUser.email_verification) {
             return res.status(400).json({
-                message: "This email is already registered. Please sign in instead.",
+                message: "This email is already verified. Please sign in or complete your profile.",
                 status: false,
                 statusCode: 400
             });
@@ -49,7 +49,7 @@ export async function signup(req, res) {
         const verificationToken = jwt.sign(
             { email },
             process.env.JWT_SECRET,
-            { expiresIn: '15m' }
+            { expiresIn: '5m' }
         );
         const verificationLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
 
@@ -97,7 +97,43 @@ export async function signup(req, res) {
         });
     }
 }
+export async function resendVerification(req, res) {
+    try {
+        const { email } = req.body;
+        const { user } = db;
+        if (!email) {
+            return res.status(400).json({ message: "Email is required", status: false });
+        }
 
+        const existingUser = await user.findOne({ where: { email }, raw: true });
+        if (!existingUser) {
+            return res.status(404).json({ message: "User not found", status: false });
+        }
+
+        if (existingUser.email_verification) {
+            return res.status(400).json({ message: "Email is already verified", status: false });
+        }
+
+        const verificationToken = jwt.sign(
+            { email },
+            process.env.JWT_SECRET,
+            { expiresIn: '5m' }
+        );
+        const verificationLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
+
+        await sendSignupMail({ email, verifyUrl: verificationLink });
+
+        return res.status(200).json({
+            message: "Verification email re-sent successfully.",
+            status: true,
+            statusCode: 200
+        });
+
+    } catch (error) {
+        console.error("Error in resendVerification:", error);
+        return res.status(500).json({ message: "Internal Server Error", status: false });
+    }
+}
 export async function verifyEmail(req, res) {
     try {
         const token = req.query.token || req.body.token;
@@ -125,15 +161,18 @@ export async function verifyEmail(req, res) {
             return res.status(400).json({ message: "Token has expired or already been used", status: false });
         }
 
-        await user.update(
-            { email_verification: true },
-            { where: { email: decoded.email } }
-        );
-
         const verifiedToken = jwt.sign(
             { email: decoded.email, purpose: 'complete_profile' },
             process.env.JWT_SECRET,
-            { expiresIn: '1h' }
+            { expiresIn: '5m' }
+        );
+
+        await user.update(
+            { 
+                email_verification: true,
+                password_reset_token: verifiedToken 
+            },
+            { where: { email: decoded.email } }
         );
 
         return res.status(200).json({ message: 'Email verified successfully', status: true, verifiedToken });
@@ -192,6 +231,14 @@ export async function completeProfile(req, res) {
             return res.status(404).json({ message: "User Not Found", status: false });
         }
 
+        if (getUser.password) {
+            return res.status(400).json({ message: "Profile already completed", status: false });
+        }
+
+        if (getUser.password_reset_token !== token) {
+             return res.status(400).json({ message: 'Invalid or already used token', status: false });
+        }
+
         const hashedPassword = await bcrypt.hash(password, 10);
         const userObj = {
             first_name: firstName,
@@ -202,7 +249,7 @@ export async function completeProfile(req, res) {
             ...(reditus_gr_id ? { reditus_gr_id } : {}),
             ...(reditus_affiliate_slug ? { reditus_affiliate_slug } : {}),
         };
-        await user.update(userObj, { where: { email } });
+        await user.update({ ...userObj, password_reset_token: null }, { where: { email } });
 
         // Generate JWT token for auto-login
         const updatedUser = await user.findOne({ where: { email }, raw: true });
@@ -410,8 +457,9 @@ export async function forgotPassword(req, res) {
         if (!isUserExist) {
             return res.json({ message: "No user Exist with this email", status: false, statusCode: 400 })
         }
-        const resetToken = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '15m' });
-        const resetLink = `${process.env.FRONTEND_URL}/password-reset/reset_token?=${resetToken}`;
+        const resetToken = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '5m' });
+        const resetLink = `${process.env.FRONTEND_URL}/password-reset/reset_token?token=${resetToken}`;
+        await user.update({ password_reset_token: resetToken }, { where: { email } });
         sendPasswordResetMail({ email, resetUrl: resetLink });
         return res.status(200).json({ message: "Password Reset sent to your mail", status: true, reset_link: resetLink, statusCode: 200 });
     } catch (error) {
@@ -422,21 +470,47 @@ export async function forgotPassword(req, res) {
 
 export async function resetPasswrod(req, res) {
     try {
-        const { email, password } = req.body;
+        const { email, password, token } = req.body;
+        const reset_token = token || req.query.token;
         const { user } = db;
         if (!email) {
-            return res.json({ message: "Email required", status: false, statusCode: 400 })
+            return res.status(400).json({ message: "Email required", status: false, statusCode: 400 })
         }
         if (!password) {
-            return res.json({ message: "password Required", status: false, statusCode: 400 })
+            return res.status(400).json({ message: "password Required", status: false, statusCode: 400 })
         }
+        if (!reset_token) {
+            return res.status(400).json({ message: "Reset token required", status: false, statusCode: 400 })
+        }
+
+        let decoded;
+        try {
+            decoded = jwt.verify(reset_token, process.env.JWT_SECRET);
+            if (decoded.email !== email) {
+                return res.status(400).json({ message: "Token does not match email", status: false });
+            }
+        } catch (err) {
+            return res.status(400).json({ message: "Invalid or expired reset token", status: false });
+        }
+
         const existingUser = await user.findOne({ where: { email } });
         if (!existingUser) {
-            return res.json({ message: "User not found on this email", status: false, statusCode: 400 })
+            return res.status(400).json({ message: "User not found on this email", status: false, statusCode: 400 })
         }
+
+        if (existingUser.password_reset_token !== reset_token) {
+            return res.status(400).json({ message: "Reset token has expired or already been used", status: false });
+        }
+
+        const isSamePassword = await bcrypt.compare(password, existingUser.password);
+        if (isSamePassword) {
+            return res.status(400).json({ message: "New password cannot be the same as your current password", status: false });
+        }
+
         const hashedPassword = await bcrypt.hash(password, 10);
         const userObj = {
-            password: hashedPassword
+            password: hashedPassword,
+            password_reset_token: null // Expire after use
         }
         await user.update(userObj, {
             where: { email }

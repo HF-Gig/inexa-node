@@ -437,6 +437,11 @@ export async function updatePassword(req, res) {
       return res.status(400).json({ message: "Incorrect current password", status: false });
     }
 
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      return res.status(400).json({ message: "New password cannot be the same as your current password", status: false });
+    }
+
     if (newPassword.length < 10) {
       return res.status(400).json({ message: "Password must be at least 10 characters", status: false });
     }
