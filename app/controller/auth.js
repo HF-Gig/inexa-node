@@ -4,6 +4,7 @@ import { generateToken } from "../helper/generateToken.js";
 import jwt from 'jsonwebtoken'
 import { sendSignupMail } from "./sendSignupMail.js";
 import { sendPasswordResetMail } from "./sendPasswordResetMail.js";
+import sendEmail from "../helper/sendEmail.js";
 
 export async function signup(req, res) {
     try {
@@ -253,6 +254,63 @@ export async function completeProfile(req, res) {
 
         // Generate JWT token for auto-login
         const updatedUser = await user.findOne({ where: { email }, raw: true });
+
+        try {
+            const esc = (v) =>
+                String(v ?? '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            const display = (v) => (v == null || v === '' ? 'N/A' : esc(v));
+            const mailInfo = await sendEmail({
+                to: 'sales@inexa.co.za',
+                subject: `New account completed: ${firstName} ${lastName}`,
+                html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #333; border-bottom: 2px solid #3322ff; padding-bottom: 10px;">New user completed registration</h2>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+              <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold; width: 40%;">User ID:</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">${updatedUser.id}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Name:</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">${display(firstName)} ${display(lastName)}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Email:</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;"><a href="mailto:${esc(email)}">${display(email)}</a></td>
+              </tr>
+              <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Phone:</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;"><a href="tel:${esc(phone)}">${display(phone)}</a></td>
+              </tr>
+              <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Country:</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">${display(country)}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Completed:</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">${new Date().toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' })}</td>
+              </tr>
+            </table>
+            <p style="margin-top: 20px; color: #666; font-size: 12px;">
+              This user finished account setup after email verification (complete profile).
+            </p>
+          </div>
+        `,
+            });
+            console.log('[completeProfile] Sales notification email sent', {
+                to: 'sales@inexa.co.za',
+                userId: updatedUser.id,
+                userEmail: email,
+                messageId: mailInfo?.messageId,
+            });
+        } catch (emailError) {
+            console.error('Failed to send sales notification for completed profile:', emailError);
+        }
+
         const loginToken = await generateToken({
             id: updatedUser.id,
             email: updatedUser.email
