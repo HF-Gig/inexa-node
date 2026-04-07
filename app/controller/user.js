@@ -33,7 +33,8 @@ export async function getUsers(req, res) {
       where: whereClause,
       limit: pageSize,
       offset: offset,
-      attributes: { exclude: ['password'] } // Exclude password from response
+      attributes: { exclude: ['password'] }, // Exclude password from response
+      order: [['createdAt', 'DESC']],
     });
 
     const pagination = getPaginationMetadata({
@@ -372,7 +373,7 @@ export async function getUserById(req, res) {
 export async function updateUserProfile(req, res) {
   try {
     const { id } = req.params;
-    const { first_name, last_name, email, phone, country } = req.body;
+    const { first_name, last_name, email, phone, country, government_id } = req.body;
 
     const user = await db.user.findOne({ where: { id } });
 
@@ -394,9 +395,26 @@ export async function updateUserProfile(req, res) {
 
       // 2. Handle Government ID
       if (req.files['government_id']) {
+        if (user.government_id && user.government_id !== req.files['government_id'][0].path) {
+          const previousIdPath = user.government_id.replace(/\\/g, '/');
+          if (fs.existsSync(previousIdPath)) {
+            fs.unlinkSync(previousIdPath);
+          }
+        }
         updateData.government_id = req.files['government_id'][0].path;
         updateData.is_identity_verified = false;
       }
+    }
+
+    if (government_id === 'true') {
+      if (user.government_id) {
+        const existingIdPath = user.government_id.replace(/\\/g, '/');
+        if (fs.existsSync(existingIdPath)) {
+          fs.unlinkSync(existingIdPath);
+        }
+      }
+      updateData.government_id = null;
+      updateData.is_identity_verified = false;
     }
 
     await user.update(updateData);

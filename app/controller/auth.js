@@ -50,41 +50,41 @@ export async function signup(req, res) {
         const verificationToken = jwt.sign(
             { email },
             process.env.JWT_SECRET,
-            { expiresIn: '5m' }
+            { expiresIn: '1h' }
         );
         const verificationLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
 
-        if (!existingUser) {
-            await user.create({
-                email,
-                password: null,
-                first_name: null,
-                last_name: null,
-                email_verification: false,
-                reditus_gr_id: reditus_gr_id || null,
-                reditus_affiliate_slug: reditus_affiliate_slug || null,
-            });
-        } else {
-            // Update attribution if present (keep existing if already stored)
-            const updateObj = {};
-            if (reditus_gr_id && !existingUser.reditus_gr_id) updateObj.reditus_gr_id = reditus_gr_id;
-            if (reditus_affiliate_slug && !existingUser.reditus_affiliate_slug) updateObj.reditus_affiliate_slug = reditus_affiliate_slug;
-            if (Object.keys(updateObj).length > 0) {
-                await user.update(updateObj, { where: { email } });
-            }
-            await sendSignupMail({ ...req.body, verifyUrl: verificationLink });
+        // if (!existingUser) {
+        //     await user.create({
+        //         email,
+        //         password: null,
+        //         first_name: null,
+        //         last_name: null,
+        //         email_verification: false,
+        //         reditus_gr_id: reditus_gr_id || null,
+        //         reditus_affiliate_slug: reditus_affiliate_slug || null,
+        //     });
+        // } else {
+        //     // Update attribution if present (keep existing if already stored)
+        //     const updateObj = {};
+        //     if (reditus_gr_id && !existingUser.reditus_gr_id) updateObj.reditus_gr_id = reditus_gr_id;
+        //     if (reditus_affiliate_slug && !existingUser.reditus_affiliate_slug) updateObj.reditus_affiliate_slug = reditus_affiliate_slug;
+        //     if (Object.keys(updateObj).length > 0) {
+        //         await user.update(updateObj, { where: { email } });
+        //     }
+        //     await sendSignupMail({ ...req.body, verifyUrl: verificationLink });
 
-            return res.status(200).json({
-                message: "Verification email re-sent successfully.",
-                status: true,
-                statusCode: 200
-            });
-        }
+        //     return res.status(200).json({
+        //         message: "Verification email re-sent successfully.",
+        //         status: true,
+        //         statusCode: 200
+        //     });
+        // }
 
         await sendSignupMail({ ...req.body, verifyUrl: verificationLink });
 
         return res.status(201).json({
-            message: "Registration successful. Please check your email for verification.",
+            message: "Please check your email for verification.",
             status: true,
             statusCode: 201
         });
@@ -135,9 +135,59 @@ export async function resendVerification(req, res) {
         return res.status(500).json({ message: "Internal Server Error", status: false });
     }
 }
+// export async function verifyEmail(req, res) {
+//     try {
+//         const token = req.query.token || req.body.token;
+//         if (!token) {
+//             return res.status(400).json({ message: "Token is required", status: false });
+//         }
+
+//         let decoded;
+//         try {
+//             decoded = jwt.verify(token, process.env.JWT_SECRET);
+//         } catch (err) {
+//             if (err.name === 'TokenExpiredError') {
+//                 return res.status(400).json({ message: 'Token expired', status: false });
+//             }
+//             return res.status(400).json({ message: 'Invalid token', status: false });
+//         }
+
+//         const { user } = db;
+//         const existingUser = await user.findOne({ where: { email: decoded.email } });
+//         if (!existingUser) {
+//             return res.status(400).json({ message: "Invalid token user", status: false });
+//         }
+
+//         if (existingUser.email_verification) {
+//             return res.status(400).json({ message: "Token has expired or already been used", status: false });
+//         }
+
+//         const verifiedToken = jwt.sign(
+//             { email: decoded.email, purpose: 'complete_profile' },
+//             process.env.JWT_SECRET,
+//             { expiresIn: '5m' }
+//         );
+
+//         await user.update(
+//             {
+//                 email_verification: true,
+//                 password_reset_token: verifiedToken
+//             },
+//             { where: { email: decoded.email } }
+//         );
+
+//         return res.status(200).json({ message: 'Email verified successfully', status: true, verifiedToken });
+
+//     } catch (error) {
+//         console.log("error in email verification======>", error);
+//         return res.json({ message: "Internal Server Error", status: false, statusCode: 500 });
+//     }
+// }
+
 export async function verifyEmail(req, res) {
     try {
         const token = req.query.token || req.body.token;
+
         if (!token) {
             return res.status(400).json({ message: "Token is required", status: false });
         }
@@ -146,41 +196,116 @@ export async function verifyEmail(req, res) {
         try {
             decoded = jwt.verify(token, process.env.JWT_SECRET);
         } catch (err) {
+
             if (err.name === 'TokenExpiredError') {
-                return res.status(400).json({ message: 'Token expired', status: false });
+                return res.status(400).json({
+                    message: "The verification link has expired. Please re-register.",
+                    status: false,
+                    code: "TOKEN_EXPIRED"
+                });
             }
-            return res.status(400).json({ message: 'Invalid token', status: false });
+
+            if (err.name === 'JsonWebTokenError') {
+                return res.status(400).json({
+                    message: "Invalid verification link",
+                    status: false,
+                    code: "INVALID_TOKEN"
+                });
+            }
+
+            return res.status(400).json({
+                message: "Token verification failed",
+                status: false
+            });
         }
 
         const { user } = db;
-        const existingUser = await user.findOne({ where: { email: decoded.email } });
+
+        // find user first
+        let existingUser = await user.findOne({
+            where: { email: decoded.email }
+        });
+
+        // CASE 1: Already verified — may still need to complete profile (password / details)
+        if (existingUser?.email_verification) {
+            if (!existingUser.password) {
+                const verifiedToken = jwt.sign(
+                    { email: decoded.email, purpose: 'complete_profile' },
+                    process.env.JWT_SECRET,
+                    { expiresIn: '24h' }
+                );
+                await user.update(
+                    { password_reset_token: verifiedToken },
+                    { where: { email: decoded.email } }
+                );
+                return res.status(200).json({
+                    message: "Email already verified. Continue to complete your profile.",
+                    status: true,
+                    verifiedToken
+                });
+            }
+            return res.status(200).json({
+                message: "Email already verified.",
+                status: true
+            });
+        }
+
+        // CASE 2: Create user if not exists
         if (!existingUser) {
-            return res.status(400).json({ message: "Invalid token user", status: false });
+            try {
+                existingUser = await user.create({
+                    email: decoded.email,
+                    email_verification: true,
+                    password: null,
+                    first_name: null,
+                    last_name: null,
+                    reditus_gr_id: decoded.reditus_gr_id || null,
+                    reditus_affiliate_slug: decoded.reditus_affiliate_slug || null
+                });
+            } catch (err) {
+                // Handle race condition (duplicate insert)
+                if (err.name === 'SequelizeUniqueConstraintError') {
+                    existingUser = await user.findOne({
+                        where: { email: decoded.email }
+                    });
+                } else {
+                    throw err;
+                }
+            }
         }
 
-        if (existingUser.email_verification) {
-            return res.status(400).json({ message: "Token has expired or already been used", status: false });
+        // CASE 3: If exists but not verified → update
+        if (!existingUser.email_verification) {
+            await user.update(
+                { email_verification: true },
+                { where: { email: decoded.email } }
+            );
         }
 
+        // Always generate fresh profile token (long enough to finish the form)
         const verifiedToken = jwt.sign(
             { email: decoded.email, purpose: 'complete_profile' },
             process.env.JWT_SECRET,
-            { expiresIn: '5m' }
+            { expiresIn: '24h' }
         );
 
         await user.update(
-            { 
-                email_verification: true,
-                password_reset_token: verifiedToken 
-            },
+            { password_reset_token: verifiedToken },
             { where: { email: decoded.email } }
         );
 
-        return res.status(200).json({ message: 'Email verified successfully', status: true, verifiedToken });
+        return res.status(200).json({
+            message: "Email verified successfully",
+            status: true,
+            verifiedToken
+        });
 
     } catch (error) {
         console.log("error in email verification======>", error);
-        return res.json({ message: "Internal Server Error", status: false, statusCode: 500 });
+        return res.status(500).json({
+            message: "Internal Server Error",
+            status: false
+        });
     }
 }
 
@@ -237,7 +362,7 @@ export async function completeProfile(req, res) {
         }
 
         if (getUser.password_reset_token !== token) {
-             return res.status(400).json({ message: 'Invalid or already used token', status: false });
+            return res.status(400).json({ message: 'Invalid or already used token', status: false });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -548,7 +673,7 @@ export async function resetPasswrod(req, res) {
                 return res.status(400).json({ message: "Token does not match email", status: false });
             }
         } catch (err) {
-            return res.status(400).json({ message: "Invalid or expired reset token", status: false });
+            return res.status(400).json({ message: "This password reset link is invalid or has expired. Please request a new one to continue.", status: false });
         }
 
         const existingUser = await user.findOne({ where: { email } });
