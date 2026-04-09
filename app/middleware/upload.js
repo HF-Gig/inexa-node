@@ -32,7 +32,7 @@ function getUpload(folder = 'logos') {
     return multer({
         storage: storage,
         limits: {
-            fileSize: 5 * 1024 * 1024, // 5MB limit
+            fileSize: 20 * 1024 * 1024, // 20MB limit
         }
     });
 }
