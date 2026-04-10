@@ -334,7 +334,13 @@ export async function getCourses(req, res) {
         'skills', 'breakdown_description', 'subjects', 'createdAt', 'updatedAt', 'price'
       ];
 
+    // Frontend should only get active items by default.
+    // Admin can opt-in to include inactive items.
+    const includeInactive =
+      req.query.include_inactive === '1' || req.query.include_inactive === 'true';
+    if (!includeInactive) {
     where.status = 1;
+    }
 
     const { count, rows: courses } = await db.courses.findAndCountAll({
       attributes,
