@@ -17,6 +17,35 @@ const normalizeCountryCode = (value) => {
   return String(value).trim().toUpperCase();
 };
 
+/** Match DB: case-insensitive, trim, then remove all whitespace (spaces/tabs/newlines between words). */
+function normalizeProgramTitleFingerprint(title) {
+  return String(title ?? '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+/** MySQL 8+ fingerprint for programme title (same rules as normalizeProgramTitleFingerprint). */
+function programTitleFingerprintLiteral() {
+  return Sequelize.literal(
+    "LOWER(REGEXP_REPLACE(TRIM(COALESCE(`title`, '')), '[[:space:]]+', ''))"
+  );
+}
+
+/** Duplicate title check by content type (course/program), case-insensitive and whitespace-insensitive. */
+async function findExistingCourseWithSameTitleAndType({ title, contentType, excludeCourseId }) {
+  const fingerprint = normalizeProgramTitleFingerprint(title);
+  if (!fingerprint || !contentType) return null;
+  const conditions = [
+    { content_type: contentType },
+    Sequelize.where(programTitleFingerprintLiteral(), Op.eq, fingerprint),
+  ];
+  if (excludeCourseId != null) {
+    conditions.push({ id: { [Op.ne]: excludeCourseId } });
+  }
+  return db.courses.findOne({ where: { [Op.and]: conditions } });
+}
+
 export const applyCountrySpecificCosts = async (courseData, countryCode) => {
   const providerId = courseData?.course_provider_id;
   const courseId = courseData?.id;
@@ -342,14 +371,40 @@ export async function getCourses(req, res) {
     where.status = 1;
     }
 
-    const { count, rows: courses } = await db.courses.findAndCountAll({
-      attributes,
+    const listQueryBase = { attributes, where, order, raw: true };
+
+    let count;
+    let courses;
+
+    // Admin course/programme lists: one row per title fingerprint (case-insensitive, ignores spaces).
+    if (where.content_type === 'program' || where.content_type === 'course') {
+      const grouped = await db.courses.findAll({
+        attributes: [[Sequelize.fn('MAX', Sequelize.col('id')), 'id']],
       where,
+        group: [programTitleFingerprintLiteral()],
+        raw: true,
+      });
+      count = grouped.length;
+      const dedupedIds = grouped.map((g) => g.id).filter((id) => id != null);
+      if (dedupedIds.length === 0) {
+        courses = [];
+      } else {
+        courses = await db.courses.findAll({
+          ...listQueryBase,
+          where: { ...where, id: { [Op.in]: dedupedIds } },
       limit: pageSize,
       offset,
-      order,
-      raw: true,
-    });
+        });
+      }
+    } else {
+      const result = await db.courses.findAndCountAll({
+        ...listQueryBase,
+        limit: pageSize,
+        offset,
+      });
+      count = result.count;
+      courses = result.rows;
+    }
 
     //console.log("Got raw courses:", courses.slice(0,2)); // sample 2 for clarity
 
@@ -1371,6 +1426,21 @@ export async function createCourse(req, res) {
     if (req.body.owners) {
       req.body.owners = normalizeToNumberArray(req.body.owners);
     }
+    const contentTypeForDup = req.body.content_type || 'course';
+    if (contentTypeForDup === 'program' || contentTypeForDup === 'course') {
+      const dup = await findExistingCourseWithSameTitleAndType({
+        title: req.body.title,
+        contentType: contentTypeForDup,
+        excludeCourseId: null,
+      });
+      if (dup) {
+        return res.status(409).json({
+          message: `A ${contentTypeForDup === 'program' ? 'programme' : 'course'} with this title already exists.`,
+          status: false,
+          statusCode: 409,
+        });
+      }
+    }
     const course = await db.courses.create(req.body);
     if (!course) {
       return res.json({ message: 'Course not created', status: false, statusCode: 400 });
@@ -1538,6 +1608,31 @@ export async function updateCourse(req, res) {
     }
     if (req.body.facilitator) {
       req.body.facilitator = normalizeToNumberArray(req.body.facilitator);
+    }
+
+    const existingCourse = await db.courses.findOne({ where: { id: courseId } });
+    if (!existingCourse) {
+      return res.json({ message: 'Course not found', status: false, statusCode: 404 });
+    }
+    const nextContentType =
+      req.body.content_type !== undefined ? req.body.content_type : existingCourse.content_type;
+    const titleForDup =
+      req.body.title !== undefined
+        ? String(req.body.title).trim()
+        : String(existingCourse.title || '').trim();
+    if ((nextContentType === 'program' || nextContentType === 'course') && titleForDup) {
+      const dup = await findExistingCourseWithSameTitleAndType({
+        title: titleForDup,
+        contentType: nextContentType,
+        excludeCourseId: existingCourse.id,
+      });
+      if (dup) {
+        return res.status(409).json({
+          message: `A ${nextContentType === 'program' ? 'programme' : 'course'} with this title already exists.`,
+          status: false,
+          statusCode: 409,
+        });
+      }
     }
 
     const [updated] = await db.courses.update(req.body, { where: { id: courseId } });
