@@ -8,7 +8,7 @@ export async function getUsers(req, res) {
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.page_size) || 10;
     const offset = (page - 1) * pageSize;
-    const { role, search } = req.query;
+    const { role, search, sort_by, sort_dir } = req.query;
 
     // Build where clause to apply role filter if provided
     const whereClause = {};
@@ -29,12 +29,36 @@ export async function getUsers(req, res) {
       ];
     }
 
+    const allowedSortFields = new Set([
+      'id',
+      'createdAt',
+      'first_name',
+      'last_name',
+      'email',
+      'country',
+      'phone',
+      'role'
+    ]);
+    const normalizedSortDir = String(sort_dir || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    let order = [['createdAt', 'DESC']];
+    if (sort_by) {
+      if (sort_by === 'name') {
+        order = [
+          ['first_name', normalizedSortDir],
+          ['last_name', normalizedSortDir]
+        ];
+      } else if (allowedSortFields.has(sort_by)) {
+        order = [[sort_by, normalizedSortDir]];
+      }
+    }
+
     const { count, rows: users } = await db.user.findAndCountAll({
       where: whereClause,
       limit: pageSize,
       offset: offset,
       attributes: { exclude: ['password'] }, // Exclude password from response
-      order: [['createdAt', 'DESC']],
+      order,
     });
 
     const pagination = getPaginationMetadata({
