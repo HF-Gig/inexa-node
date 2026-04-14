@@ -39,9 +39,9 @@ export async function signup(req, res) {
             raw: true
         });
 
-        if (existingUser && existingUser.email_verification) {
+        if (existingUser && existingUser.email_verification && existingUser.password) {
             return res.status(400).json({
-                message: "This email is already verified. Please sign in or complete your profile.",
+                message: "This email is already verified. Please sign in.",
                 status: false,
                 statusCode: 400
             });
@@ -83,6 +83,14 @@ export async function signup(req, res) {
 
         await sendSignupMail({ ...req.body, verifyUrl: verificationLink });
 
+        if (existingUser && existingUser.email_verification && !existingUser.password) {
+            return res.status(200).json({
+                message: "Your email is already verified, but your profile is incomplete. We sent a fresh link so you can continue setup.",
+                status: true,
+                statusCode: 200
+            });
+        }
+
         return res.status(201).json({
             message: "Please check your email for verification.",
             status: true,
@@ -111,7 +119,7 @@ export async function resendVerification(req, res) {
             return res.status(404).json({ message: "User not found", status: false });
         }
 
-        if (existingUser.email_verification) {
+        if (existingUser.email_verification && existingUser.password) {
             return res.status(400).json({ message: "Email is already verified", status: false });
         }
 
@@ -324,19 +332,24 @@ export async function completeProfile(req, res) {
         const authHeader = req.headers.authorization;
         const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : (req.body.verified_token || req.body.token);
 
-        if (token) {
-            try {
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
-                if (decoded.purpose !== 'complete_profile') {
-                    return res.status(400).json({ message: 'Invalid token purpose', status: false });
-                }
-                email = decoded.email;
-            } catch (err) {
-                if (err.name === 'TokenExpiredError') {
-                    return res.status(400).json({ message: 'Token expired', status: false });
-                }
-                return res.status(400).json({ message: 'Invalid token', status: false });
+        if (!token) {
+            return res.status(400).json({
+                message: 'Use the verification link from your email to open complete profile.',
+                status: false
+            });
+        }
+
+        try {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            if (decoded.purpose !== 'complete_profile') {
+                return res.status(400).json({ message: 'Invalid token purpose', status: false });
             }
+            email = decoded.email;
+        } catch (err) {
+            if (err.name === 'TokenExpiredError') {
+                return res.status(400).json({ message: 'Token expired', status: false });
+            }
+            return res.status(400).json({ message: 'Invalid token', status: false });
         }
 
         if (!email) {
