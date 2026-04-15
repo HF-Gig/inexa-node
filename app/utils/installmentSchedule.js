@@ -46,16 +46,24 @@ export function getSubscriptionPlanAmounts(course, standardPricing = getStandard
         };
     }
 
-    const fallbackFirstPayment = Number(course?.self_cost || 500);
-    const fallbackRecurringPayment = Number(course?.interactive_cost || fallbackFirstPayment);
+    const selfCost = Number(course?.self_cost || 0);
+    const interactiveCost = Number(course?.interactive_cost || 0);
+    const paymentOnceOffAmount = Number(course?.payment_once_off_amount || 0);
+    const computedOnceOffFromCosts =
+        (interactiveCost > 0 || selfCost > 0) ? (interactiveCost * 2) + selfCost : 0;
+
+    const fallbackFirstPayment = Number(selfCost || 500);
+    const fallbackRecurringPayment = Number(interactiveCost || fallbackFirstPayment);
     const isInexa = Number(course?.course_provider_id) === 7;
-    const configuredTotal = isInexa
-        ? Number(course?.interactive_cost || course?.payment_once_off_amount || 0)
-        : Number(course?.payment_once_off_amount || course?.interactive_cost || 1190);
+    const configuredTotal = computedOnceOffFromCosts > 0
+        ? computedOnceOffFromCosts
+        : Number(paymentOnceOffAmount || (isInexa ? interactiveCost : 1190));
     const onceOffAmount = configuredTotal;
     const first3060 = Number(course?.payment_first_30_60 || fallbackFirstPayment || 0);
-    const second3060 = Number(course?.payment_second_30_60 || fallbackRecurringPayment || 0);
-    const third3060 = Number(course?.payment_third_30_60 || fallbackRecurringPayment || 0);
+    const remainder3060 = Math.max(0, configuredTotal - first3060);
+    const each3060 = Math.round((remainder3060 / 2) * 100) / 100;
+    const second3060 = each3060;
+    const third3060 = each3060;
     const firstMonthly = Number(course?.payment_first_monthly_11 || fallbackFirstPayment || 0);
     const monthlyAuto = Math.max(0, (configuredTotal - firstMonthly) / 11);
     const firstQuarterly = Number(course?.payment_first_quarterly_3 || fallbackFirstPayment || 0);
