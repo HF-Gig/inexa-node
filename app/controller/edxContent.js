@@ -72,11 +72,15 @@ async function findExistingCourseWithSameTitleTypeAndUniversity({
 export const applyCountrySpecificCosts = async (courseData, countryCode) => {
   const providerId = courseData?.course_provider_id;
   const courseId = courseData?.id;
+  const normalizedCountryCode = normalizeCountryCode(countryCode);
+  let hasCountrySpecificCost = false;
+
   if (!providerId || !db.course_cost_config) {
+    courseData.has_country_specific_cost = false;
+    courseData.requested_country_code = normalizedCountryCode;
     return courseData;
   }
 
-  const normalizedCountryCode = normalizeCountryCode(countryCode);
   let config = null;
 
   if (normalizedCountryCode && courseId) {
@@ -84,6 +88,7 @@ export const applyCountrySpecificCosts = async (courseData, countryCode) => {
       where: { provider_id: providerId, course_id: courseId, country_code: normalizedCountryCode },
       raw: true,
     });
+    if (config) hasCountrySpecificCost = true;
   }
 
   if (!config && courseId) {
@@ -98,6 +103,7 @@ export const applyCountrySpecificCosts = async (courseData, countryCode) => {
       where: { provider_id: providerId, course_id: null, country_code: normalizedCountryCode },
       raw: true,
     });
+    if (config) hasCountrySpecificCost = true;
   }
 
   if (!config) {
@@ -107,7 +113,11 @@ export const applyCountrySpecificCosts = async (courseData, countryCode) => {
     });
   }
 
-  if (!config) return courseData;
+  if (!config) {
+    courseData.has_country_specific_cost = false;
+    courseData.requested_country_code = normalizedCountryCode;
+    return courseData;
+  }
 
   const mappedFields = [
     "self_cost",
@@ -133,6 +143,10 @@ export const applyCountrySpecificCosts = async (courseData, countryCode) => {
       courseData[field] = config[field];
     }
   }
+
+  courseData.has_country_specific_cost = hasCountrySpecificCost;
+  courseData.requested_country_code = normalizedCountryCode;
+  courseData.applied_cost_country_code = config.country_code || null;
 
   return courseData;
 };
