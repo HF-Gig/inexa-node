@@ -2,7 +2,8 @@ import axios from "axios";
 import db from "../../db.js";
 import crypto from "crypto";
 import { getStandardPricing } from "../utils/pricing.js";
-import { getUsdToZarRate, usdToZarPaystackSubunits } from "../utils/usdToZar.js";
+import { getLatestUsdConversionRates, majorCurrencyToZarPaystackSubunits } from "../utils/usdToZar.js";
+import { resolvePaystackPricingCurrency } from "../utils/pricingCurrency.js";
 import {
     buildManualEftInstallments,
     normalizePlan,
@@ -31,6 +32,16 @@ const loadCourseForPaystackPricing = async (courseId, countryCode) => {
     return courseData;
 };
 
+async function computeZarChargeSubunitsFromCourse(amountMajor, course) {
+    const pricingCurrency = await resolvePaystackPricingCurrency(course);
+    const rates = await getLatestUsdConversionRates();
+    return {
+        subunits: majorCurrencyToZarPaystackSubunits(amountMajor, pricingCurrency, rates),
+        pricingCurrency,
+        rates,
+    };
+}
+
 const paystackHeaders = () => ({
     Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
     "Content-Type": "application/json",
@@ -38,7 +49,20 @@ const paystackHeaders = () => ({
 
 const notifyReditusFirstInstallment = async ({ reference, userId, email, amountUsd }) => {
     try {
-        const amountCents = Math.round(Number(amountUsd) * 100);
+        const cur = String(pricingCurrency || "USD").toUpperCase();
+        let amountCents;
+        if (cur === "USD") {
+            amountCents = Math.round(Number(amountMajor) * 100);
+        } else {
+            const rates = await getLatestUsdConversionRates();
+            const perUsd = Number(rates[cur]);
+            if (Number.isFinite(perUsd) && perUsd > 0) {
+                const usdEq = Number(amountMajor) / perUsd;
+                amountCents = Math.round(usdEq * 100);
+            } else {
+                amountCents = Math.round(Number(amountMajor) * 100);
+            }
+        }
         await createReditusPayment({
             idempotency_key: reference,
             referral_uid: userId,
@@ -73,11 +97,14 @@ const processPaystackSuccess = async ({
     const standardPricing = getStandardPricing();
     const course = await loadCourseForPaystackPricing(courseId, countryCode);
     const planNorm = normalizePlan(selectedPlan);
+    const pricingCurrencyUpper = await resolvePaystackPricingCurrency(course);
+    const pricingCurrencyLower = pricingCurrencyUpper.toLowerCase();
     const schedule = buildManualEftInstallments({
         selectedPlan,
         course,
         standardPricing,
-        currency: "usd",
+        currency: pricingCurrencyLower,
+        // discountPercentage,
     });
 
     const now = new Date();
@@ -113,7 +140,7 @@ const processPaystackSuccess = async ({
             user_id: userId,
             course_id: courseId || null,
             amount: firstUsd,
-            currency: "usd",
+            currency: pricingCurrencyLower,
             status: "succeeded",
             payment_type: "subscription",
             invoice_number: reference,
@@ -129,7 +156,13 @@ const processPaystackSuccess = async ({
             paystack_authorization_code: authCode,
             paystack_customer_code: customerCode,
         });
-        await notifyReditusFirstInstallment({ reference, userId, email, amountUsd: firstUsd });
+        await notifyReditusFirstInstallment({
+            reference,
+            userId,
+            email,
+            amountMajor: firstUsd,
+            pricingCurrency: pricingCurrencyUpper,
+        });
         return { subscription, paymentRecord };
     }
 
@@ -142,7 +175,7 @@ const processPaystackSuccess = async ({
             user_id: userId,
             course_id: courseId || null,
             amount: firstUsd,
-            currency: "usd",
+            currency: pricingCurrencyLower,
             status: "succeeded",
             payment_type: "subscription",
             invoice_number: reference,
@@ -158,7 +191,13 @@ const processPaystackSuccess = async ({
             paystack_authorization_code: authCode,
             paystack_customer_code: customerCode,
         });
-        await notifyReditusFirstInstallment({ reference, userId, email, amountUsd: firstUsd });
+        await notifyReditusFirstInstallment({
+            reference,
+            userId,
+            email,
+            amountMajor: firstUsd,
+            pricingCurrency: pricingCurrencyUpper,
+        });
         return { subscription, paymentRecord };
     }
 
@@ -185,7 +224,13 @@ const processPaystackSuccess = async ({
     }));
 
     const created = await db.payment.bulkCreate(rows);
-    await notifyReditusFirstInstallment({ reference, userId, email, amountUsd: firstUsd });
+    await notifyReditusFirstInstallment({
+        reference,
+        userId,
+        email,
+        amountMajor: firstUsd,
+        pricingCurrency: pricingCurrencyUpper,
+    });
     return { subscription, paymentRecord: created[0], payments: created };
 };
 
@@ -195,15 +240,21 @@ export const getPaystackQuote = async (req, res) => {
         const standardPricing = getStandardPricing();
         const course = await loadCourseForPaystackPricing(courseId, countryCode);
         const normalizedPlan = normalizePlan(selectedPlan);
-        const amountUsd = paystackFirstInstallmentUsd({ selectedPlan, course, standardPricing });
-        const rate = await getUsdToZarRate();
-        const amountMinor = usdToZarPaystackSubunits(amountUsd, rate);
-        const amountZar = amountMinor / 100;
+        const amountMajor = paystackFirstInstallmentUsd({
+            selectedPlan,
+            course,
+            standardPricing,
+            // discountPercentage,
+        });
+        const { subunits, pricingCurrency, rates } = await computeZarChargeSubunitsFromCourse(amountMajor, course);
+        const amountZar = subunits / 100;
         return res.status(200).json({
             success: true,
-            amount_usd: amountUsd,
+            amount_usd: amountMajor,
+            amount_major: amountMajor,
+            pricing_currency: pricingCurrency,
             amount_zar: amountZar,
-            exchange_rate: rate,
+            exchange_rate: rates.ZAR,
             selected_plan: normalizedPlan,
             plan_label: PAYSTACK_PLAN_LABELS[normalizedPlan] || PAYSTACK_PLAN_LABELS.first_payment,
         });
@@ -224,9 +275,16 @@ export const initializeTransaction = async (req, res) => {
 
         const standardPricing = getStandardPricing();
         const course = await loadCourseForPaystackPricing(courseId, countryCode);
-        const amountUsd = paystackFirstInstallmentUsd({ selectedPlan, course, standardPricing });
-        const rate = await getUsdToZarRate();
-        const amount = usdToZarPaystackSubunits(amountUsd, rate);
+        const amountMajor = paystackFirstInstallmentUsd({
+            selectedPlan,
+            course,
+            standardPricing,
+            // discountPercentage,
+        });
+        const { subunits: amount, pricingCurrency, rates } = await computeZarChargeSubunitsFromCourse(
+            amountMajor,
+            course
+        );
         const reference = `PAY-${Date.now()}-${userId}`;
 
         const response = await axios.post(
@@ -260,9 +318,11 @@ export const initializeTransaction = async (req, res) => {
                 authorization_url: data.authorization_url,
                 access_code: data.access_code,
                 reference: reference,
-                amount_usd: amountUsd,
+                amount_usd: amountMajor,
+                amount_major: amountMajor,
+                pricing_currency: pricingCurrency,
                 amount_zar: amount / 100,
-                exchange_rate: rate,
+                exchange_rate: rates.ZAR,
             });
         } else {
             return res.status(400).json({ success: false, message: "Could not initialize transaction" });
@@ -396,9 +456,10 @@ async function chargeOnePaystackInstallment(paymentRow) {
         return;
     }
 
-    const rate = await getUsdToZarRate();
+    const rowCur = String(paymentRow.currency || "usd").toUpperCase();
+    const rates = await getLatestUsdConversionRates();
     const usdAmount = Number(paymentRow.amount);
-    const zarSubunits = usdToZarPaystackSubunits(usdAmount, rate);
+    const zarSubunits = majorCurrencyToZarPaystackSubunits(usdAmount, rowCur, rates);
     if (zarSubunits < 100) {
         console.warn(`[Paystack cron] Amount too small for payment id ${paymentRow.id}`);
         return;
