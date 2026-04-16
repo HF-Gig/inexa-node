@@ -55,9 +55,11 @@ export function getSubscriptionPlanAmounts(course, standardPricing = getStandard
     const fallbackFirstPayment = Number(selfCost || 500);
     const fallbackRecurringPayment = Number(interactiveCost || fallbackFirstPayment);
     const isInexa = Number(course?.course_provider_id) === 7;
-    const configuredTotal = computedOnceOffFromCosts > 0
-        ? computedOnceOffFromCosts
-        : Number(paymentOnceOffAmount || (isInexa ? interactiveCost : 1190));
+    const configuredTotal = isInexa
+        ? Number(paymentOnceOffAmount || selfCost || interactiveCost || 0)
+        : computedOnceOffFromCosts > 0
+            ? computedOnceOffFromCosts
+            : Number(paymentOnceOffAmount || 1190);
     const onceOffAmount = configuredTotal;
     const first3060 = Number(course?.payment_first_30_60 || fallbackFirstPayment || 0);
     const remainder3060 = Math.max(0, configuredTotal - first3060);
