@@ -18,6 +18,7 @@ import paystackRoutes from './routes/paystack.js';
 import enquiriesRoutes from './routes/enquiries.js';
 
 import { getCostConfigs, updateCostConfigById, deleteCostConfigById, updateCostsByProvider } from './controller/costs.js';
+import { getCoupons, getPublicActiveCoupons, createCoupon, updateCoupon, deleteCoupon, validateCoupon } from './controller/coupon.js';
 const router = express.Router();
 
 
@@ -43,5 +44,12 @@ router.get('/costs', getCostConfigs);
 router.post('/costs/update', updateCostsByProvider);
 router.put('/costs/:id', updateCostConfigById);
 router.delete('/costs/:id', deleteCostConfigById);
+
+router.get('/coupons', getCoupons);
+router.get('/coupons/public-active', getPublicActiveCoupons);
+router.post('/coupons', createCoupon);
+router.put('/coupons/:id', updateCoupon);
+router.delete('/coupons/:id', deleteCoupon);
+router.post('/coupons/validate', validateCoupon);
 
 export default router;

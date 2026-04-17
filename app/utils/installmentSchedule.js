@@ -21,6 +21,14 @@ export const addMonths = (date, months) => {
     return nextDate;
 };
 
+const applyPercentageDiscount = (amount, discountPercentage = 0) => {
+    const safeAmount = Number(amount || 0);
+    const pct = Math.min(Math.max(Number(discountPercentage || 0), 0), 100);
+    if (pct <= 0) return Math.round((safeAmount + Number.EPSILON) * 100) / 100;
+    const discounted = safeAmount * (1 - pct / 100);
+    return Math.round((discounted + Number.EPSILON) * 100) / 100;
+};
+
 
 export function getSubscriptionPlanAmounts(course, standardPricing = getStandardPricing()) {
     const fpStd = Number(standardPricing.firstPaymentAmountUSD) || 333;
@@ -86,14 +94,19 @@ export function getSubscriptionPlanAmounts(course, standardPricing = getStandard
     };
 }
 
-export function paystackFirstInstallmentUsd({ selectedPlan, course, standardPricing = getStandardPricing() }) {
+export function paystackFirstInstallmentUsd({
+    selectedPlan,
+    course,
+    standardPricing = getStandardPricing(),
+    discountPercentage = 0,
+}) {
     const normalizedPlan = normalizePlan(selectedPlan);
     const a = getSubscriptionPlanAmounts(course, standardPricing);
-    if (normalizedPlan === "full") return a.onceOffAmount;
-    if (normalizedPlan === "first_payment") return a.first3060;
-    if (normalizedPlan === "monthly_payment") return a.firstMonthly;
-    if (normalizedPlan === "quarterly_payment") return a.firstQuarterly;
-    return a.first3060;
+    if (normalizedPlan === "full") return applyPercentageDiscount(a.onceOffAmount, discountPercentage);
+    if (normalizedPlan === "first_payment") return applyPercentageDiscount(a.first3060, discountPercentage);
+    if (normalizedPlan === "monthly_payment") return applyPercentageDiscount(a.firstMonthly, discountPercentage);
+    if (normalizedPlan === "quarterly_payment") return applyPercentageDiscount(a.firstQuarterly, discountPercentage);
+    return applyPercentageDiscount(a.first3060, discountPercentage);
 }
 
 export const buildManualEftInstallments = ({
@@ -102,9 +115,21 @@ export const buildManualEftInstallments = ({
     standardPricing = getStandardPricing(),
     currency = "usd",
     recurringAmountOverride,
+    discountPercentage = 0,
 }) => {
     const normalizedPlan = normalizePlan(selectedPlan);
-    const amounts = getSubscriptionPlanAmounts(course, standardPricing);
+    const baseAmounts = getSubscriptionPlanAmounts(course, standardPricing);
+    const amounts = {
+        ...baseAmounts,
+        onceOffAmount: applyPercentageDiscount(baseAmounts.onceOffAmount, discountPercentage),
+        first3060: applyPercentageDiscount(baseAmounts.first3060, discountPercentage),
+        second3060: applyPercentageDiscount(baseAmounts.second3060, discountPercentage),
+        third3060: applyPercentageDiscount(baseAmounts.third3060, discountPercentage),
+        firstMonthly: applyPercentageDiscount(baseAmounts.firstMonthly, discountPercentage),
+        monthlyAuto: applyPercentageDiscount(baseAmounts.monthlyAuto, discountPercentage),
+        firstQuarterly: applyPercentageDiscount(baseAmounts.firstQuarterly, discountPercentage),
+        quarterlyAuto: applyPercentageDiscount(baseAmounts.quarterlyAuto, discountPercentage),
+    };
 
     let second3060 = amounts.second3060;
     let third3060 = amounts.third3060;

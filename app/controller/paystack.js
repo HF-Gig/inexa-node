@@ -47,7 +47,7 @@ const paystackHeaders = () => ({
     "Content-Type": "application/json",
 });
 
-const notifyReditusFirstInstallment = async ({ reference, userId, email, amountUsd }) => {
+const notifyReditusFirstInstallment = async ({ reference, userId, email, amountMajor, pricingCurrency }) => {
     try {
         const cur = String(pricingCurrency || "USD").toUpperCase();
         let amountCents;
@@ -93,7 +93,9 @@ const processPaystackSuccess = async ({
     authorization,
     customer,
     countryCode,
+    promoCode,
 }) => {
+    const discountPercentage = await getDiscountFromPromoCode(promoCode);
     const standardPricing = getStandardPricing();
     const course = await loadCourseForPaystackPricing(courseId, countryCode);
     const planNorm = normalizePlan(selectedPlan);
@@ -104,7 +106,7 @@ const processPaystackSuccess = async ({
         course,
         standardPricing,
         currency: pricingCurrencyLower,
-        // discountPercentage,
+        discountPercentage,
     });
 
     const now = new Date();
@@ -234,9 +236,26 @@ const processPaystackSuccess = async ({
     return { subscription, paymentRecord: created[0], payments: created };
 };
 
+const getDiscountFromPromoCode = async (code) => {
+    if (!code) return 0;
+    const normalizedCode = String(code).trim();
+    if (!normalizedCode) return 0;
+    const promo = await db.coupon.findOne({ where: { code: normalizedCode, isActive: true } });
+    if (!promo) return 0;
+    if (promo.expiryDate) {
+        const expiry = new Date(promo.expiryDate);
+        expiry.setHours(23, 59, 59, 999);
+        if (expiry < new Date()) {
+            return 0;
+        }
+    }
+    return Number(promo.percentage || 0);
+};
+
 export const getPaystackQuote = async (req, res) => {
     try {
-        const { courseId, selectedPlan, countryCode } = req.query;
+        const { courseId, selectedPlan, countryCode, promoCode } = req.query;
+        const discountPercentage = await getDiscountFromPromoCode(promoCode);
         const standardPricing = getStandardPricing();
         const course = await loadCourseForPaystackPricing(courseId, countryCode);
         const normalizedPlan = normalizePlan(selectedPlan);
@@ -244,7 +263,7 @@ export const getPaystackQuote = async (req, res) => {
             selectedPlan,
             course,
             standardPricing,
-            // discountPercentage,
+            discountPercentage,
         });
         const { subunits, pricingCurrency, rates } = await computeZarChargeSubunitsFromCourse(amountMajor, course);
         const amountZar = subunits / 100;
@@ -256,6 +275,7 @@ export const getPaystackQuote = async (req, res) => {
             amount_zar: amountZar,
             exchange_rate: rates.ZAR,
             selected_plan: normalizedPlan,
+            // discount_percentage: discountPercentage,
             plan_label: PAYSTACK_PLAN_LABELS[normalizedPlan] || PAYSTACK_PLAN_LABELS.first_payment,
         });
     } catch (error) {
@@ -266,20 +286,21 @@ export const getPaystackQuote = async (req, res) => {
 
 export const initializeTransaction = async (req, res) => {
     try {
-        const { userId, name, country, courseId, selectedPlan, countryCode } = req.body;
+        const { userId, name, country, courseId, selectedPlan, countryCode, promoCode } = req.body;
         const user = await db.user.findByPk(userId);
 
         if (!user) {
             return res.status(404).json({ success: false, message: "User not found" });
         }
 
+        const discountPercentage = await getDiscountFromPromoCode(promoCode);
         const standardPricing = getStandardPricing();
         const course = await loadCourseForPaystackPricing(courseId, countryCode);
         const amountMajor = paystackFirstInstallmentUsd({
             selectedPlan,
             course,
             standardPricing,
-            // discountPercentage,
+            discountPercentage,
         });
         const { subunits: amount, pricingCurrency, rates } = await computeZarChargeSubunitsFromCourse(
             amountMajor,
@@ -306,6 +327,7 @@ export const initializeTransaction = async (req, res) => {
                         : {}),
                     ...(selectedPlan ? { selectedPlan: String(selectedPlan) } : {}),
                     ...(countryCode ? { countryCode: String(countryCode) } : {}),
+                    ...(promoCode ? { promoCode: String(promoCode) } : {}),
                 },
             },
             { headers: paystackHeaders() }
@@ -335,7 +357,7 @@ export const initializeTransaction = async (req, res) => {
 
 export const verifyTransaction = async (req, res) => {
     try {
-        const { reference, userId, name, country, courseId, selectedPlan, countryCode } = req.body;
+        const { reference, userId, name, country, courseId, selectedPlan, countryCode, promoCode } = req.body;
 
         if (!reference) {
             return res.status(400).json({ success: false, message: "Reference is required" });
@@ -371,6 +393,7 @@ export const verifyTransaction = async (req, res) => {
                 authorization,
                 customer,
                 countryCode,
+                promoCode,
             });
             return res.status(200).json({
                 success: true,
@@ -411,6 +434,7 @@ export const handleWebhook = async (req, res) => {
             const courseId = rawCourse === "" || rawCourse == null ? null : rawCourse;
             const selectedPlan = metadata?.selectedPlan ?? metadata?.selected_plan ?? "";
             const countryCode = metadata?.countryCode ?? metadata?.country_code ?? "";
+            const promoCode = metadata?.promoCode ?? metadata?.promo_code ?? "";
 
             const existingPayment = await db.payment.findOne({ where: { invoice_number: reference } });
             if (!existingPayment && userId) {
@@ -425,6 +449,7 @@ export const handleWebhook = async (req, res) => {
                     authorization,
                     customer,
                     countryCode: countryCode || undefined,
+                    promoCode: promoCode || undefined,
                 });
                 console.log(`Processed Paystack success for user ${userId}, reference ${reference}`);
             }

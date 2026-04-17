@@ -22,6 +22,7 @@ import enquiriesModel from "./enquiries.js";
 import facilitatorsModel from "./facilitators.js";
 import featuredFacilitatorsModel from "./featured_facilitators.js";
 import courseCostConfigModel from "./course_cost_config.js";
+import couponModel from "./coupon.js";
 
 dotenv.config();
 const modelsObjs = [];
@@ -120,6 +121,8 @@ async function _initModels() {
         db.featured_facilitators = FeaturedFacilitator;
         const CourseCostConfig = courseCostConfigModel(sequelize, DataTypes)
         db.course_cost_config = CourseCostConfig;
+        const Coupon = couponModel(sequelize, DataTypes)
+        db.coupon = Coupon;
 
         // Call associate methods for all models
         Object.values(db).forEach(model => {

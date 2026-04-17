@@ -451,8 +451,28 @@ const notifyPaymentCompletion = async (req, res) => {
 
 const createManualEft = async (req, res) => {
     try {
-        const { courseId, currency, selectedPlan, amount, recurringAmount } = req.body;
+        const { courseId, currency, selectedPlan, amount, recurringAmount, promoCode } = req.body;
         const userId = req.user ? req.user.id : req.body.userId;
+
+        let discountPercentage = 0;
+        if (promoCode) {
+            const normalizedCode = String(promoCode).trim();
+            if (normalizedCode) {
+                const promo = await db.coupon.findOne({ where: { code: normalizedCode, isActive: true } });
+                if (promo) {
+                    if (promo.expiryDate) {
+                        const expiry = new Date(promo.expiryDate);
+                        expiry.setHours(23, 59, 59, 999);
+                        if (expiry >= new Date()) {
+                            discountPercentage = Number(promo.percentage || 0);
+                        }
+                    } else {
+                        discountPercentage = Number(promo.percentage || 0);
+                    }
+                }
+            }
+        }
+
         const standardPricing = await getStandardPricing();
         const course = courseId ? await db.courses.findByPk(courseId) : null;
         const schedule = buildManualEftInstallments({
@@ -460,7 +480,8 @@ const createManualEft = async (req, res) => {
             course,
             standardPricing,
             currency: currency || 'usd',
-            recurringAmountOverride: recurringAmount
+            recurringAmountOverride: recurringAmount,
+            discountPercentage
         });
         const requestedAmount = Number(amount);
         if (Number.isFinite(requestedAmount) && requestedAmount > 0 && schedule.length > 0) {
