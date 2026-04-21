@@ -42,8 +42,16 @@ const updateCourseStartDates = async () => {
         }
 
         const [updatedCount] = await Course.update(
-            { start_date: formattedDate },
-            { where: whereClause }
+            {
+                start_date: formattedDate
+                // pacing_type: 'self_paced'
+            },
+
+
+            {
+                where: whereClause,
+                silent: true
+            }
         );
 
         console.log(`Successfully updated start_date for ${updatedCount} courses (excluded degrees).`);

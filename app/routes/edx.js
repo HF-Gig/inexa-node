@@ -1,7 +1,7 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { isEditor, isModerator } from '../middleware/roleCheck.js';
-import { getCourses, getCoursesDetail, createCourse, updateCourse, deleteCourse, getFilterData, getAllFilterData, getCourseDetailBySlug, getPopularCourses, getFeaturedCourses, updateFeaturedCourse, updateCobranding, exportCoursesCsv } from "../controller/edxContent.js";
+import { getCourses, getCoursesDetail, createCourse, updateCourse, deleteCourse, getFilterData, getAllFilterData, getCourseDetailBySlug, getPopularCourses, getFeaturedCourses, updateFeaturedCourse, updateCobranding, exportCoursesCsv, updateAnnualDiscountForAllCourses } from "../controller/edxContent.js";
 import { fetchAndStoreEdxCourses } from "../helper/storeTheEdxContent.js";
 import getUpload from '../middleware/upload.js';
 
@@ -34,6 +34,7 @@ router.put('/featured/:position', isEditor, updateFeaturedCourse);
 router.post('', isModerator, uploadFields, createCourse);
 router.put('/:courseId/cobranding', isModerator, updateCobranding);
 router.post('/:courseId', isModerator, uploadFields, updateCourse);
+router.put('/update-all-discount', isModerator, updateAnnualDiscountForAllCourses);
 router.delete('/:courseId', isEditor, deleteCourse);
 
 export default router; 

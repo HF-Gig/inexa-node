@@ -70,6 +70,146 @@ export async function getOrganizations(req, res) {
   }
 }
 
+// export async function getOrganizations(req, res) {
+//   try {
+//     const page = parseInt(req.query.page) || 1;
+//     const pageSize = parseInt(req.query.page_size) || 10;
+//     const offset = (page - 1) * pageSize;
+//     const { organization_name, search } = req.query;
+
+//     // Helper: normalize string for search
+//     const normalize = str =>
+//       str
+//         .toLowerCase()
+//         .replace(/\s+/g, ' ')     // collapse spaces
+//         .replace(/[^\w\s]/g, '')  // remove special chars
+//         .trim();
+
+//     // Build where clause
+//     const whereClause = {};
+//     if (organization_name || search) {
+//       const searchValue = normalize(organization_name || search);
+
+//       // Case-insensitive and space-normalized search using Sequelize.fn
+//       whereClause[db.Sequelize.Op.and] = [
+//         db.Sequelize.where(
+//           db.Sequelize.fn(
+//             'LOWER',
+//             db.Sequelize.fn('REPLACE', db.Sequelize.col('organization_name'), '  ', ' ')
+//           ),
+//           {
+//             [db.Sequelize.Op.like]: `%${searchValue}%`
+//           }
+//         )
+//       ];
+//     }
+
+//     // Sorting
+//     const orderBy = req.query.sortCol || 'createdAt';
+//     const orderDir = (req.query.sortDir || 'DESC').toUpperCase();
+//     const order = [[orderBy, orderDir]];
+
+//     // Default pagination to true unless explicitly set to 'false'
+//     const paginationEnabled = req.query.pagination !== 'false';
+//     let organizations, count;
+
+//     if (paginationEnabled) {
+//       const result = await db.organization.findAndCountAll({
+//         where: whereClause,
+//         limit: pageSize,
+//         offset: offset,
+//         order: order
+//       });
+//       organizations = result.rows;
+//       count = result.count;
+//     } else {
+//       organizations = await db.organization.findAll({
+//         where: whereClause,
+//         order: order
+//       });
+//       count = organizations.length;
+//     }
+
+//     // // Add full URL to logo images
+//     // const orgsWithLogoUrls = organizations.map(org => {
+//     //   const orgData = org.toJSON();
+//     //   if (orgData.organization_logo_image_url) {
+//     //     orgData.organization_logo_image_url = getImageUrl(orgData.organization_logo_image_url);
+//     //   }
+//     //   return orgData;
+//     // });
+
+//     const uniqueMap = new Map();
+
+//     organizations.forEach(org => {
+//       const orgData = org.toJSON();
+//       const normalizedName = normalize(orgData.organization_name);
+
+//       // Keep only first occurrence
+//       if (!uniqueMap.has(normalizedName)) {
+//         if (orgData.organization_logo_image_url) {
+//           orgData.organization_logo_image_url = getImageUrl(orgData.organization_logo_image_url);
+//         }
+//         uniqueMap.set(normalizedName, orgData);
+//       }
+//     });
+
+//     const orgsWithLogoUrls = Array.from(uniqueMap.values());
+
+//     const pagination = paginationEnabled
+//       ? getPaginationMetadata({ page, pageSize, totalItems: count })
+//       : undefined;
+
+//     return res.json(
+//       formatPaginatedResponse({
+//         data: orgsWithLogoUrls,
+//         ...(paginationEnabled ? { pagination } : {})
+//       })
+//     );
+//   } catch (error) {
+//     console.log("error in getOrganizations======>", error);
+//     return res.status(500).json({
+//       message: "Internal Server Error",
+//       status: false,
+//       statusCode: 500
+//     });
+//   }
+// }
+
+// export async function getOrganizations(req, res) {
+//   try {
+//     const organizations = await db.organization.findAll({
+//       order: [['createdAt', 'DESC']]
+//     });
+
+//     const data = organizations.map(org => {
+//       const orgData = org.toJSON();
+
+//       if (orgData.organization_logo_image_url) {
+//         orgData.organization_logo_image_url = getImageUrl(
+//           orgData.organization_logo_image_url
+//         );
+//       }
+
+//       return orgData;
+//     });
+
+//     return res.json({
+//       status: true,
+//       statusCode: 200,
+//       data: data
+//     });
+
+//   } catch (error) {
+//     console.log("error in getOrganizations======>", error);
+//     return res.status(500).json({
+//       message: "Internal Server Error",
+//       status: false,
+//       statusCode: 500
+//     });
+//   }
+// }
+
 export async function getOrganizationById(req, res) {
   try {
     const { id } = req.params;

@@ -824,6 +824,7 @@ export async function getPopularCourses(req, res) {
 export async function getFeaturedCourses(req, res) {
   try {
     const featured = await db.featured_course.findAll({
+      where: { category: 'degree' },
       include: [{
         model: db.courses,
         as: 'course',
@@ -1405,6 +1406,7 @@ export async function createCourse(req, res) {
       'payment_type_interactive',
       'first_payment',
       'quarterly_payment',
+      'annual_discount_percentage',
       // DECIMAL columns: MySQL rejects '' so we must normalize to null
       'payment_first_30_60',
       'payment_second_30_60',
@@ -1426,8 +1428,20 @@ export async function createCourse(req, res) {
       delete req.body.min_effort;
       delete req.body.max_effort;
     }
-    if (req.body.disclaimer) {
-      req.body.disclaimer = String(req.body.disclaimer).split(',')[0] === "1" ? 1 : 0;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'disclaimer')) {
+      const d = req.body.disclaimer;
+      const raw = Array.isArray(d) && d.length ? d[d.length - 1] : d;
+      req.body.disclaimer =
+        raw === true || raw === 1 || String(raw).split(',')[0] === '1' || raw === 'true' ? 1 : 0;
+    } else {
+      // Keep disclaimer enabled by default when omitted on create.
+      req.body.disclaimer = 1;
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'trademark')) {
+      const t = req.body.trademark;
+      const raw = Array.isArray(t) && t.length ? t[t.length - 1] : t;
+      req.body.trademark =
+        raw === true || raw === 1 || String(raw).split(',')[0] === '1' || raw === 'true' ? 1 : 0;
     }
     // Generate uuid if not provided
     if (!req.body.uuid) {
@@ -1584,6 +1598,7 @@ export async function updateCourse(req, res) {
       'payment_type_interactive',
       'first_payment',
       'quarterly_payment',
+      'annual_discount_percentage',
       'payment_first_30_60',
       'payment_second_30_60',
       'payment_third_30_60',
@@ -1600,8 +1615,17 @@ export async function updateCourse(req, res) {
       req.body.price = String(req.body.price);
     }
 
-    if (req.body.disclaimer) {
-      req.body.disclaimer = String(req.body.disclaimer).split(',')[0] === "1" ? 1 : 0;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'disclaimer')) {
+      const d = req.body.disclaimer;
+      const raw = Array.isArray(d) && d.length ? d[d.length - 1] : d;
+      req.body.disclaimer =
+        raw === true || raw === 1 || String(raw).split(',')[0] === '1' || raw === 'true' ? 1 : 0;
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'trademark')) {
+      const t = req.body.trademark;
+      const raw = Array.isArray(t) && t.length ? t[t.length - 1] : t;
+      req.body.trademark =
+        raw === true || raw === 1 || String(raw).split(',')[0] === '1' || raw === 'true' ? 1 : 0;
     }
 
     if (req.body.register_link) {
@@ -1752,6 +1776,51 @@ export async function updateCourse(req, res) {
     return res.json({ message: 'Course updated successfully', status: true, statusCode: 200, data: updatedCourse });
   } catch (error) {
     console.error('error in updateCourse======>', error);
+    return res.json({ message: 'Internal Server Error', status: false, statusCode: 500 });
+  }
+}
+
+export async function updateAnnualDiscountForAllCourses(req, res) {
+  try {
+    const { annual_discount_percentage } = req.body;
+    
+    // Validate the input
+    if (annual_discount_percentage === undefined || annual_discount_percentage === null) {
+      return res.json({ 
+        message: 'Annual discount percentage is required', 
+        status: false, 
+        statusCode: 400 
+      });
+    }
+    
+    const discountValue = Number(annual_discount_percentage);
+    
+    // Validate range
+    if (isNaN(discountValue) || discountValue < 0 || discountValue > 100) {
+      return res.json({ 
+        message: 'Annual discount percentage must be a number between 0 and 100', 
+        status: false, 
+        statusCode: 400 
+      });
+    }
+    
+    // Update all courses in the database
+    const [updatedCount] = await db.courses.update(
+      { annual_discount_percentage: discountValue },
+      { where: {} } // Empty where clause updates all records
+    );
+    
+    return res.json({ 
+      message: `Annual discount percentage updated to ${discountValue}% for ${updatedCount} courses`, 
+      status: true, 
+      statusCode: 200, 
+      data: { 
+        updated_courses_count: updatedCount,
+        annual_discount_percentage: discountValue
+      }
+    });
+  } catch (error) {
+    console.error('error in updateAnnualDiscountForAllCourses======>', error);
     return res.json({ message: 'Internal Server Error', status: false, statusCode: 500 });
   }
 }

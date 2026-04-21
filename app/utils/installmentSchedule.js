@@ -58,7 +58,8 @@ export function getSubscriptionPlanAmounts(course, standardPricing = getStandard
     const interactiveCost = Number(course?.interactive_cost || 0);
     const paymentOnceOffAmount = Number(course?.payment_once_off_amount || 0);
     const computedOnceOffFromCosts =
-        (interactiveCost > 0 || selfCost > 0) ? (interactiveCost * 2) + selfCost : 0;
+        // (interactiveCost > 0 || selfCost > 0) ? (interactiveCost * 2) + selfCost : 0;
+        (interactiveCost > 0 || selfCost > 0) ? interactiveCost + selfCost : 0;
 
     const fallbackFirstPayment = Number(selfCost || 500);
     const fallbackRecurringPayment = Number(interactiveCost || fallbackFirstPayment);
@@ -102,7 +103,15 @@ export function paystackFirstInstallmentUsd({
 }) {
     const normalizedPlan = normalizePlan(selectedPlan);
     const a = getSubscriptionPlanAmounts(course, standardPricing);
-    if (normalizedPlan === "full") return applyPercentageDiscount(a.onceOffAmount, discountPercentage);
+    // if (normalizedPlan === "full") return applyPercentageDiscount(a.onceOffAmount, discountPercentage);
+     // For full payment plans, apply annual discount in addition to promo discount
+     if (normalizedPlan === "full") {
+        const annualDiscountPercentage = Number(course?.annual_discount_percentage || course?.full_payment_discount || 10);
+        const totalDiscountPercentage = annualDiscountPercentage > 0 
+            ? annualDiscountPercentage + discountPercentage 
+            : discountPercentage;
+        return applyPercentageDiscount(a.onceOffAmount, totalDiscountPercentage);
+    }
     if (normalizedPlan === "first_payment") return applyPercentageDiscount(a.first3060, discountPercentage);
     if (normalizedPlan === "monthly_payment") return applyPercentageDiscount(a.firstMonthly, discountPercentage);
     if (normalizedPlan === "quarterly_payment") return applyPercentageDiscount(a.firstQuarterly, discountPercentage);
@@ -119,9 +128,20 @@ export const buildManualEftInstallments = ({
 }) => {
     const normalizedPlan = normalizePlan(selectedPlan);
     const baseAmounts = getSubscriptionPlanAmounts(course, standardPricing);
+
+    // For full payment plans, apply annual discount in addition to promo discount
+    let totalDiscountPercentage = discountPercentage;
+    if (normalizedPlan === "full") {
+        const annualDiscountPercentage = Number(course?.annual_discount_percentage || course?.full_payment_discount || 10);
+        totalDiscountPercentage = annualDiscountPercentage > 0 
+            ? annualDiscountPercentage + discountPercentage 
+            : discountPercentage;
+    }
+
     const amounts = {
         ...baseAmounts,
-        onceOffAmount: applyPercentageDiscount(baseAmounts.onceOffAmount, discountPercentage),
+        // onceOffAmount: applyPercentageDiscount(baseAmounts.onceOffAmount, discountPercentage),
+        onceOffAmount: applyPercentageDiscount(baseAmounts.onceOffAmount, totalDiscountPercentage),
         first3060: applyPercentageDiscount(baseAmounts.first3060, discountPercentage),
         second3060: applyPercentageDiscount(baseAmounts.second3060, discountPercentage),
         third3060: applyPercentageDiscount(baseAmounts.third3060, discountPercentage),

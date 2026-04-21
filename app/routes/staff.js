@@ -35,7 +35,8 @@ const upload = getUpload('staff');
 
 router.post('', isEditor, upload.single('profile_image_url'), createStaff);
 router.post('/inexa-staff', isEditor, upload.single('profile_image_url'), createInexaFacilitator);
-router.get('/inexa-staff/get-all', isEditor, getInexaStaff);
+// router.get('/inexa-staff/get-all', isEditor, getInexaStaff);
+router.get('/get-all-inexa-staff', isEditor, getInexaStaff);
 router.get('', isEditor, getStaff);
 router.post('/add-featured-facilitator', isEditor, addFeaturedFacilitator);
 

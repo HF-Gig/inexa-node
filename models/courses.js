@@ -52,6 +52,11 @@ const courseDataModel = (sequelize, DataTypes) => {
             defaultValue: 0,
             allowNull: true,
         },
+        annual_discount_percentage: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            defaultValue: 10,
+        },
         skills: {
             type: DataTypes.JSON,
             allowNull: true,
@@ -180,7 +185,12 @@ const courseDataModel = (sequelize, DataTypes) => {
         },
         disclaimer: {
             type: DataTypes.SMALLINT,
-            default: 0,
+            default: 1,
+            allowNull: true,
+        },
+        trademark: {
+            type: DataTypes.SMALLINT,
+            default: 1,
             allowNull: true,
         },
         course_snapshot: {
