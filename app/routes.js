@@ -18,7 +18,19 @@ import paystackRoutes from './routes/paystack.js';
 import enquiriesRoutes from './routes/enquiries.js';
 
 import { getCostConfigs, updateCostConfigById, deleteCostConfigById, updateCostsByProvider } from './controller/costs.js';
-import { getCoupons, getPublicActiveCoupons, createCoupon, updateCoupon, deleteCoupon, validateCoupon } from './controller/coupon.js';
+import {
+    getCoupons,
+    getPublicActiveCoupons,
+    createCoupon,
+    updateCoupon,
+    deleteCoupon,
+    validateCoupon,
+    pauseCoupon,
+    resumeCoupon,
+    duplicateCoupon,
+    getCouponUsageReport,
+    getCouponPerformanceDashboard,
+} from './controller/coupon.js';
 const router = express.Router();
 
 
@@ -51,5 +63,10 @@ router.post('/coupons', createCoupon);
 router.put('/coupons/:id', updateCoupon);
 router.delete('/coupons/:id', deleteCoupon);
 router.post('/coupons/validate', validateCoupon);
+router.post('/coupons/:id/pause', pauseCoupon);
+router.post('/coupons/:id/resume', resumeCoupon);
+router.post('/coupons/:id/duplicate', duplicateCoupon);
+router.get('/coupons/:id/report', getCouponUsageReport);
+router.get('/coupons-dashboard', getCouponPerformanceDashboard);
 
 export default router;

@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import { sendInvoiceEmail } from '../helper/sendEmail.js';
 import { getStandardPricing } from '../utils/pricing.js';
 import { normalizePlan, buildManualEftInstallments } from '../utils/installmentSchedule.js';
+import { createCouponRedemption, resolveCouponForCheckout } from '../utils/promoCode.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -453,24 +454,25 @@ const createManualEft = async (req, res) => {
     try {
         const { courseId, currency, selectedPlan, amount, recurringAmount, promoCode } = req.body;
         const userId = req.user ? req.user.id : req.body.userId;
+        const userEmail = req.user?.email || req.body.email;
 
         let discountPercentage = 0;
         if (promoCode) {
-            const normalizedCode = String(promoCode).trim();
-            if (normalizedCode) {
-                const promo = await db.coupon.findOne({ where: { code: normalizedCode, isActive: true } });
-                if (promo) {
-                    if (promo.expiryDate) {
-                        const expiry = new Date(promo.expiryDate);
-                        expiry.setHours(23, 59, 59, 999);
-                        if (expiry >= new Date()) {
-                            discountPercentage = Number(promo.percentage || 0);
-                        }
-                    } else {
-                        discountPercentage = Number(promo.percentage || 0);
-                    }
-                }
+            const promoCheck = await resolveCouponForCheckout({
+                code: promoCode,
+                userId,
+                email: userEmail,
+                trackAttempt: false,
+                context: 'manual_eft',
+            });
+            if (!promoCheck.ok) {
+                return res.status(400).json({
+                    success: false,
+                    error: promoCheck.message,
+                    reason: promoCheck.reason,
+                });
             }
+            discountPercentage = Number(promoCheck.discountPercentage || 0);
         }
 
         const standardPricing = await getStandardPricing();
@@ -500,9 +502,33 @@ const createManualEft = async (req, res) => {
             installment_number: item.installmentNumber,
             total_installments: item.totalInstallments,
             due_date: item.dueDate,
+            promo_code: promoCode ? String(promoCode).trim() : null,
+            promo_discount_percentage: promoCode ? discountPercentage : null,
+            promo_coupon_id: null,
         }));
         const createdPayments = await db.payment.bulkCreate(paymentRows);
         const firstPaymentRecord = createdPayments.find((p) => p.installment_number === 1) || createdPayments[0];
+        if (promoCode && firstPaymentRecord) {
+            const promoCheck = await resolveCouponForCheckout({
+                code: promoCode,
+                userId,
+                email: userEmail,
+                trackAttempt: false,
+                context: 'manual_eft_redeem',
+            });
+            if (promoCheck.ok) {
+                await firstPaymentRecord.update({ promo_coupon_id: promoCheck.coupon.id });
+                await createCouponRedemption({
+                    coupon: promoCheck.coupon,
+                    code: promoCheck.coupon.code,
+                    userId,
+                    email: userEmail,
+                    paymentId: firstPaymentRecord.id,
+                    paymentReference: `MANUAL-EFT-${firstPaymentRecord.id}`,
+                    discountPercentage: promoCheck.discountPercentage,
+                });
+            }
+        }
 
         res.status(200).json({
             success: true,

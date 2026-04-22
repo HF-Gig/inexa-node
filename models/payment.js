@@ -70,6 +70,18 @@ const paymentModel = (sequelize, DataTypes) => {
       type: DataTypes.STRING(255),
       allowNull: true,
     },
+    promo_code: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    promo_discount_percentage: {
+      type: DataTypes.FLOAT,
+      allowNull: true,
+    },
+    promo_coupon_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
   }, {
     tableName: "payments",
     timestamps: true,
@@ -85,6 +97,10 @@ const paymentModel = (sequelize, DataTypes) => {
     Payment.belongsTo(models.courses, {
       foreignKey: 'course_id',
       as: 'course'
+    });
+    Payment.belongsTo(models.coupon, {
+      foreignKey: 'promo_coupon_id',
+      as: 'promoCoupon'
     });
   };
 

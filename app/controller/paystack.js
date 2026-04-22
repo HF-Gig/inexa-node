@@ -9,6 +9,7 @@ import {
     normalizePlan,
     paystackFirstInstallmentUsd,
 } from "../utils/installmentSchedule.js";
+import { createCouponRedemption, resolveCouponForCheckout } from "../utils/promoCode.js";
 import { createReditusPayment } from "../integrations/reditus.js";
 import { applyCountrySpecificCosts } from "./edxContent.js";
 
@@ -95,7 +96,14 @@ const processPaystackSuccess = async ({
     countryCode,
     promoCode,
 }) => {
-    const discountPercentage = await getDiscountFromPromoCode(promoCode);
+    const promoCheck = await resolveCouponForCheckout({
+        code: promoCode,
+        userId,
+        email,
+        trackAttempt: false,
+        context: "paystack_verify",
+    });
+    const discountPercentage = promoCheck.ok ? Number(promoCheck.discountPercentage || 0) : 0;
     const standardPricing = getStandardPricing();
     const course = await loadCourseForPaystackPricing(courseId, countryCode);
     const planNorm = normalizePlan(selectedPlan);
@@ -153,7 +161,21 @@ const processPaystackSuccess = async ({
             total_installments: schedule[0]?.totalInstallments || 1,
             due_date: schedule[0]?.dueDate,
             paystack_parent_reference: reference,
+            promo_code: promoCheck.ok ? promoCheck.coupon.code : null,
+            promo_discount_percentage: promoCheck.ok ? discountPercentage : null,
+            promo_coupon_id: promoCheck.ok ? promoCheck.coupon.id : null,
         });
+        if (promoCheck.ok) {
+            await createCouponRedemption({
+                coupon: promoCheck.coupon,
+                code: promoCheck.coupon.code,
+                userId,
+                email,
+                paymentId: paymentRecord.id,
+                paymentReference: reference,
+                discountPercentage,
+            });
+        }
         await subscription.update({
             paystack_authorization_code: authCode,
             paystack_customer_code: customerCode,
@@ -188,7 +210,21 @@ const processPaystackSuccess = async ({
             total_installments: schedule[0]?.totalInstallments,
             due_date: schedule[0]?.dueDate,
             paystack_parent_reference: reference,
+            promo_code: promoCheck.ok ? promoCheck.coupon.code : null,
+            promo_discount_percentage: promoCheck.ok ? discountPercentage : null,
+            promo_coupon_id: promoCheck.ok ? promoCheck.coupon.id : null,
         });
+        if (promoCheck.ok) {
+            await createCouponRedemption({
+                coupon: promoCheck.coupon,
+                code: promoCheck.coupon.code,
+                userId,
+                email,
+                paymentId: paymentRecord.id,
+                paymentReference: reference,
+                discountPercentage,
+            });
+        }
         await subscription.update({
             paystack_authorization_code: authCode,
             paystack_customer_code: customerCode,
@@ -223,9 +259,23 @@ const processPaystackSuccess = async ({
         total_installments: item.totalInstallments,
         due_date: item.dueDate,
         paystack_parent_reference: reference,
+        promo_code: promoCheck.ok ? promoCheck.coupon.code : null,
+        promo_discount_percentage: promoCheck.ok ? discountPercentage : null,
+        promo_coupon_id: promoCheck.ok ? promoCheck.coupon.id : null,
     }));
 
     const created = await db.payment.bulkCreate(rows);
+    if (promoCheck.ok && created?.[0]) {
+        await createCouponRedemption({
+            coupon: promoCheck.coupon,
+            code: promoCheck.coupon.code,
+            userId,
+            email,
+            paymentId: created[0].id,
+            paymentReference: reference,
+            discountPercentage,
+        });
+    }
     await notifyReditusFirstInstallment({
         reference,
         userId,
@@ -236,26 +286,39 @@ const processPaystackSuccess = async ({
     return { subscription, paymentRecord: created[0], payments: created };
 };
 
-const getDiscountFromPromoCode = async (code) => {
-    if (!code) return 0;
-    const normalizedCode = String(code).trim();
-    if (!normalizedCode) return 0;
-    const promo = await db.coupon.findOne({ where: { code: normalizedCode, isActive: true } });
-    if (!promo) return 0;
-    if (promo.expiryDate) {
-        const expiry = new Date(promo.expiryDate);
-        expiry.setHours(23, 59, 59, 999);
-        if (expiry < new Date()) {
-            return 0;
-        }
+const getDiscountFromPromoCode = async ({ code, userId, email, context }) => {
+    if (!String(code || "").trim()) {
+        return { discountPercentage: 0, promoCheck: null };
     }
-    return Number(promo.percentage || 0);
+    const promoCheck = await resolveCouponForCheckout({
+        code,
+        userId,
+        email,
+        trackAttempt: false,
+        context,
+    });
+    return {
+        discountPercentage: promoCheck.ok ? Number(promoCheck.discountPercentage || 0) : 0,
+        promoCheck,
+    };
 };
 
 export const getPaystackQuote = async (req, res) => {
     try {
-        const { courseId, selectedPlan, countryCode, promoCode } = req.query;
-        const discountPercentage = await getDiscountFromPromoCode(promoCode);
+        const { courseId, selectedPlan, countryCode, promoCode, userId, email } = req.query;
+        const { discountPercentage, promoCheck } = await getDiscountFromPromoCode({
+            code: promoCode,
+            userId,
+            email,
+            context: "paystack_quote",
+        });
+        if (String(promoCode || "").trim() && promoCheck && !promoCheck.ok) {
+            return res.status(400).json({
+                success: false,
+                message: promoCheck.message,
+                reason: promoCheck.reason,
+            });
+        }
         const standardPricing = getStandardPricing();
         const course = await loadCourseForPaystackPricing(courseId, countryCode);
         const normalizedPlan = normalizePlan(selectedPlan);
@@ -293,7 +356,19 @@ export const initializeTransaction = async (req, res) => {
             return res.status(404).json({ success: false, message: "User not found" });
         }
 
-        const discountPercentage = await getDiscountFromPromoCode(promoCode);
+        const { discountPercentage, promoCheck } = await getDiscountFromPromoCode({
+            code: promoCode,
+            userId,
+            email: user.email,
+            context: "paystack_initialize",
+        });
+        if (String(promoCode || "").trim() && promoCheck && !promoCheck.ok) {
+            return res.status(400).json({
+                success: false,
+                message: promoCheck.message,
+                reason: promoCheck.reason,
+            });
+        }
         const standardPricing = getStandardPricing();
         const course = await loadCourseForPaystackPricing(courseId, countryCode);
         const amountMajor = paystackFirstInstallmentUsd({

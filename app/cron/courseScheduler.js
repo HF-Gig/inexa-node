@@ -43,8 +43,8 @@ const updateCourseStartDates = async () => {
 
         const [updatedCount] = await Course.update(
             {
-                start_date: formattedDate
-                // pacing_type: 'self_paced'
+                start_date: formattedDate,
+                pacing_type: 'self_paced'
             },
 
 
