@@ -400,12 +400,30 @@ export async function getCourses(req, res) {
         'skills', 'breakdown_description', 'subjects', 'createdAt', 'updatedAt', 'price'
       ];
 
-    // Frontend should only get active items by default.
-    // Admin can opt-in to include inactive items.
-    const includeInactive =
-      req.query.include_inactive === '1' || req.query.include_inactive === 'true';
-    if (!includeInactive) {
-    where.status = 1;
+    // Explicit status filter for admin lists.
+    // Accepts: active/inactive/all (or 1/0 as aliases).
+    const statusFilterRaw = req.query.status != null
+      ? String(req.query.status).trim().toLowerCase()
+      : '';
+
+    if (statusFilterRaw === 'active' || statusFilterRaw === '1') {
+      where.status = 1;
+    } else if (statusFilterRaw === 'inactive' || statusFilterRaw === '0') {
+      where.status = 0;
+    } else if (statusFilterRaw !== 'all' && statusFilterRaw !== '') {
+      return res.status(400).json({
+        message: "Invalid status filter. Allowed values: active, inactive, all",
+        status: false,
+        statusCode: 400,
+      });
+    } else {
+      // Frontend should only get active items by default.
+      // Admin can opt-in to include inactive items.
+      const includeInactive =
+        req.query.include_inactive === '1' || req.query.include_inactive === 'true';
+      if (!includeInactive) {
+        where.status = 1;
+      }
     }
 
     const listQueryBase = { attributes, where, order, raw: true };
