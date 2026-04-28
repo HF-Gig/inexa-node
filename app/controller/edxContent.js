@@ -790,7 +790,7 @@ export async function getPopularCourses(req, res) {
       raw: true,
       limit: 15
     });
-    courses_certificates = attachProvidersToCourses(courses_certificates)
+    courses_certificates = await attachProvidersToCourses(courses_certificates)
     // Check for featured courses
     const featuredCoursesCertificates = await db.featured_course.findAll({
       where: { category: 'courses_certificates' },
@@ -818,7 +818,7 @@ export async function getPopularCourses(req, res) {
       raw: true,
       limit: 15
     });
-    micro_masters_bachelors = attachProvidersToCourses(micro_masters_bachelors)
+    micro_masters_bachelors = await attachProvidersToCourses(micro_masters_bachelors)
     // Check for featured MicroMasters and MicroBachelors
     const featuredMicroMasters = await db.featured_course.findAll({
       where: { category: 'micro_masters_bachelors' },
@@ -848,7 +848,7 @@ export async function getPopularCourses(req, res) {
       raw: true,
       limit: 15
     });
-    degree = attachProvidersToCourses(degree)
+    degree = await attachProvidersToCourses(degree)
     // Check for featured Degrees
     const featuredDegrees = await db.featured_course.findAll({
       where: { category: 'degree' },
