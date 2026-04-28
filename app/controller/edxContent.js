@@ -715,6 +715,50 @@ const updateCoursesWithProgramInfo = async (courses) => {
   return resultCourses;
 };
 
+async function attachProvidersToCourses(courses, providerIds = []) {
+  if (!courses || courses.length === 0) return courses;
+
+  // Extract provider IDs from courses if not passed
+  const ids = providerIds.length
+    ? providerIds
+    : [...new Set(courses.map(c => c.course_provider_id).filter(Boolean))];
+
+  if (!ids.length) return courses;
+
+  // Fetch providers
+  const providers = await db.course_providers.findAll({
+    where: { id: ids },
+    attributes: ['id', 'name', 'logo_url'],
+    raw: true
+  });
+
+  // Create map
+  const providerMap = providers.reduce((acc, p) => {
+    acc[p.id] = p;
+    return acc;
+  }, {});
+
+  // Attach provider to each course
+  return courses.map(course => {
+    const c = course.toJSON ? course.toJSON() : course;
+
+    if (c.course_provider_id && providerMap[c.course_provider_id]) {
+      const provider = providerMap[c.course_provider_id];
+
+      c.course_provider = {
+        name: provider.name,
+        image: provider.logo_url.startsWith('http')
+          ? provider.logo_url
+          : (process.env.BASE_URL || '') + provider.logo_url
+      };
+    } else {
+      c.course_provider = null;
+    }
+
+    return c;
+  });
+}
+
 export async function getPopularCourses(req, res) {
   try {
     const cacheKey = 'popularCourses';
@@ -746,7 +790,7 @@ export async function getPopularCourses(req, res) {
       raw: true,
       limit: 15
     });
-
+    courses_certificates = attachProvidersToCourses(courses_certificates)
     // Check for featured courses
     const featuredCoursesCertificates = await db.featured_course.findAll({
       where: { category: 'courses_certificates' },
@@ -774,7 +818,7 @@ export async function getPopularCourses(req, res) {
       raw: true,
       limit: 15
     });
-
+    micro_masters_bachelors = attachProvidersToCourses(micro_masters_bachelors)
     // Check for featured MicroMasters and MicroBachelors
     const featuredMicroMasters = await db.featured_course.findAll({
       where: { category: 'micro_masters_bachelors' },
@@ -804,7 +848,7 @@ export async function getPopularCourses(req, res) {
       raw: true,
       limit: 15
     });
-
+    degree = attachProvidersToCourses(degree)
     // Check for featured Degrees
     const featuredDegrees = await db.featured_course.findAll({
       where: { category: 'degree' },
