@@ -4,6 +4,7 @@ import cron from 'node-cron';
 import fs from 'fs';
 import { getEdxToken } from './generateEdxToken.js';
 import logger from './logger.js';
+import { Op } from 'sequelize';
 
 function safeJsonField(val, fallback = null) {
   if (val == null) return fallback;
@@ -64,7 +65,7 @@ async function upsertOrganization(org, silent = false) {
     if (organization_logo_image_url) updateData.organization_logo_image_url = organization_logo_image_url;
 
     if (Object.keys(updateData).length > 0) {
-      
+
       logger.info({
         msg: '🔄 DB UPDATE: Organization',
         id: existing.id,
@@ -139,18 +140,18 @@ async function extractStaffFields(staffArr, silent = false) {
     }
 
     if (obj?.position) {
-       if (obj.position.organization_name || obj.position.organization_id || obj.position.organization_uuid) {
-           logger.info({
-             msg: '🏢 Organization Data Fetched',
-             staff_name: `${obj.given_name} ${obj.family_name}`,
-             raw_org_data: {
-                name: obj.position.organization_name,
-                api_id: obj.position.organization_id, // The field causing issues
-                uuid: obj.position.organization_uuid,
-                logo: obj.position.organization_logo_image_url
-             }
-           });
-       }
+      if (obj.position.organization_name || obj.position.organization_id || obj.position.organization_uuid) {
+        logger.info({
+          msg: '🏢 Organization Data Fetched',
+          staff_name: `${obj.given_name} ${obj.family_name}`,
+          raw_org_data: {
+            name: obj.position.organization_name,
+            api_id: obj.position.organization_id, // The field causing issues
+            uuid: obj.position.organization_uuid,
+            logo: obj.position.organization_logo_image_url
+          }
+        });
+      }
     }
 
     // Add organization_id to staffData
@@ -273,6 +274,7 @@ async function ensureDefaultEdxCourseCostConfig({ providerId, courseId }) {
 async function fetchAndStoreEdxCourses(req, res, silent = false) {
   if (!req && !res) silent = true;
   let totalInserted = 0, totalUpdated = 0, totalSkipped = 0;
+  const fetchedCourseUuids = new Set();
   const results = [];
   try {
     // logger.info('Starting EDX Course Sync...');
@@ -342,14 +344,16 @@ async function fetchAndStoreEdxCourses(req, res, silent = false) {
       const courses = data.results || [];
 
       for (const course of courses) {
-        
+
         // logger.info({
         //   msg: '📦 Course Fetched Raw Data',
         //   course_uuid: course.uuid,
         //   course_title: course.title,
         //   data: course
         // });
-
+        if (course.uuid) {
+          fetchedCourseUuids.add(course.uuid);
+        }
         const courseRuns = course.course_runs || [];
         const selectedRun = getCurrentOrLatestRun(courseRuns);
         let staffArr = selectedRun?.staff;
@@ -473,7 +477,7 @@ async function fetchAndStoreEdxCourses(req, res, silent = false) {
                   providerId: edxProviderId,
                   courseId: programCourseRecord.id,
                 });
-              }else{
+              } else {
                 const uniqueKey = await generateUniqueCourseKey(program);
                 await programCourseRecord.update({ owners: ownerIds, key: uniqueKey }, { silent });
               }
@@ -510,6 +514,26 @@ async function fetchAndStoreEdxCourses(req, res, silent = false) {
       console.log(summary);
       // logger.info(summary);
     }
+
+    // Inactive old data
+    const dbCourses = await db.courses.findAll({
+      where: {
+        course_provider_id: edxProviderId
+      },
+      attributes: ['id', 'uuid']
+    });
+    const toDelete = dbCourses.filter(c => !fetchedCourseUuids.has(c.uuid)).map(c => c.id);
+    await db.courses.update(
+      { status: 0 },
+      {
+        where: {
+          id: {
+            [Op.in]: toDelete
+          }
+        }
+      });
+
+
     if (res) {
       return res.json({
         status: true,
@@ -519,6 +543,7 @@ async function fetchAndStoreEdxCourses(req, res, silent = false) {
         updated: totalUpdated,
         skipped: totalSkipped,
         results,
+        Inactive: toDelete.length
       });
     }
   } catch (error) {
