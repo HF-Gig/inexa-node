@@ -1399,9 +1399,11 @@ export async function getCourseDetailBySlug(req, res) {
     // Add course_providers with image only
     let courseProviderImage = null;
     let courseProviderName = '';
+    let courseProviderSlug = '';
     if (courseData.course_provider_id) {
-      const provider = await db.course_providers.findOne({ where: { id: courseData.course_provider_id }, attributes: ['name', 'logo_url'], raw: true });
+      const provider = await db.course_providers.findOne({ where: { id: courseData.course_provider_id }, attributes: ['name', 'logo_url', 'slug'], raw: true });
       courseProviderName = provider ? provider.name : '';
+      courseProviderSlug = provider ? provider.slug : '';
       if (provider && provider.logo_url) {
         // Prepend domain from env if not already absolute
         const domain = process.env.BASE_URL || '';
@@ -1414,7 +1416,8 @@ export async function getCourseDetailBySlug(req, res) {
     }
     courseData.course_provider = {
       name: courseProviderName,
-      image: courseProviderImage
+      image: courseProviderImage,
+      slug: courseProviderSlug
     };
 
     // Apply standard or custom pricing for frontend (fix: synced edX programs get standard pricing)
@@ -1430,8 +1433,6 @@ export async function getCourseDetailBySlug(req, res) {
       // edX and synced programs without custom pricing use standard subscription pricing
       courseData.pricing = { type: 'subscription' };
     }
-
-    // console.log("Sending courseData: ", courseData);
 
     res.json({
       data: courseData,

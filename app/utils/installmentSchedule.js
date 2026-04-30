@@ -2,6 +2,7 @@ import { getStandardPricing } from "./pricing.js";
 
 export const normalizePlan = (plan) => {
     const key = String(plan || "").toLowerCase().trim();
+    if (["interactive_cost"].includes(key)) return "interactive_cost";
     if (["full", "one_time"].includes(key)) return "full";
     if (["first_payment", "three_part"].includes(key)) return "first_payment";
     if (["monthly_payment", "monthly"].includes(key)) return "monthly_payment";
@@ -55,6 +56,10 @@ export function getSubscriptionPlanAmounts(course, standardPricing = getStandard
     }
 
     const selfCost = Number(course?.self_cost || 0);
+    const parsedEdxApiPrice = Number(
+        String(course?.price ?? "")
+        .replace(/[^0-9.-]/g, "")
+    );
     const interactiveCost = Number(course?.interactive_cost || 0);
     const paymentOnceOffAmount = Number(course?.payment_once_off_amount || 0);
     const computedOnceOffFromCosts =
@@ -92,6 +97,7 @@ export function getSubscriptionPlanAmounts(course, standardPricing = getStandard
         quarterlyAuto,
         fallbackFirstPayment,
         fallbackRecurringPayment,
+        interactiveCost: (parsedEdxApiPrice + interactiveCost)
     };
 }
 
@@ -105,12 +111,12 @@ export function paystackFirstInstallmentUsd({
     const a = getSubscriptionPlanAmounts(course, standardPricing);
     // if (normalizedPlan === "full") return applyPercentageDiscount(a.onceOffAmount, discountPercentage);
      // For full payment plans, apply annual discount in addition to promo discount
-     if (normalizedPlan === "full") {
+     if (normalizedPlan === "full" || normalizedPlan === "interactive_cost") {
         const annualDiscountPercentage = Number(course?.annual_discount_percentage || course?.full_payment_discount || 10);
         const totalDiscountPercentage = annualDiscountPercentage > 0 
             ? annualDiscountPercentage + discountPercentage 
             : discountPercentage;
-        return applyPercentageDiscount(a.onceOffAmount, totalDiscountPercentage);
+        return applyPercentageDiscount(normalizedPlan === "full" ? a.onceOffAmount : a.interactiveCost, totalDiscountPercentage);
     }
     if (normalizedPlan === "first_payment") return applyPercentageDiscount(a.first3060, discountPercentage);
     if (normalizedPlan === "monthly_payment") return applyPercentageDiscount(a.firstMonthly, discountPercentage);
