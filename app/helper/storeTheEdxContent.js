@@ -448,6 +448,7 @@ async function fetchAndStoreEdxCourses(req, res, silent = false) {
         if (course.programs && Array.isArray(course.programs)) {
           for (const program of course.programs) {
             if (program.uuid) {
+              fetchedCourseUuids.add(program.uuid);
               let programTypeId = null;
               if (program.type_attrs && program.type_attrs.uuid) {
                 const [programTypeRecord] = await db.program_type.findOrCreate({
@@ -464,9 +465,7 @@ async function fetchAndStoreEdxCourses(req, res, silent = false) {
 
               // Ensure a course exists for this program (with minimal fields)
               let programCourseRecord = await db.courses.findOne({ where: { uuid: program.uuid } });
-              if(program.uuid){
-                fetchedCourseUuids.add(program.uuid);
-              }
+
               if (!programCourseRecord) {
                 programCourseRecord = await db.courses.create({
                   uuid: program.uuid,
