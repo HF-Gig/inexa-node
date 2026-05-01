@@ -464,6 +464,9 @@ async function fetchAndStoreEdxCourses(req, res, silent = false) {
 
               // Ensure a course exists for this program (with minimal fields)
               let programCourseRecord = await db.courses.findOne({ where: { uuid: program.uuid } });
+              if(program.uuid){
+                fetchedCourseUuids.add(program.uuid);
+              }
               if (!programCourseRecord) {
                 programCourseRecord = await db.courses.create({
                   uuid: program.uuid,
