@@ -97,7 +97,7 @@ export function getSubscriptionPlanAmounts(course, standardPricing = getStandard
         quarterlyAuto,
         fallbackFirstPayment,
         fallbackRecurringPayment,
-        interactiveCost: (parsedEdxApiPrice + interactiveCost)
+        interactiveCost: (selfCost + interactiveCost)
     };
 }
 
