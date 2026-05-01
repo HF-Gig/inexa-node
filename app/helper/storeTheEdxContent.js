@@ -526,12 +526,23 @@ async function fetchAndStoreEdxCourses(req, res, silent = false) {
       attributes: ['id', 'uuid']
     });
     const toDelete = dbCourses.filter(c => !fetchedCourseUuids.has(c.uuid)).map(c => c.id);
+    const toUpdateStatus = dbCourses.filter(c => fetchedCourseUuids.has(c.uuid)).map(c => c.id);
     await db.courses.update(
       { status: 0 },
       {
         where: {
           id: {
             [Op.in]: toDelete
+          }
+        }
+      });
+    
+      await db.courses.update(
+      { status: 1 },
+      {
+        where: {
+          id: {
+            [Op.in]: toUpdateStatus
           }
         }
       });
