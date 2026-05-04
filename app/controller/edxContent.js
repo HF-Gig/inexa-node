@@ -886,7 +886,7 @@ export async function getPopularCourses(req, res) {
 export async function getFeaturedCourses(req, res) {
   try {
     const featured = await db.featured_course.findAll({
-      where: { category: 'degree' },
+      // where: { category: 'degree' },
       include: [{
         model: db.courses,
         as: 'course',
