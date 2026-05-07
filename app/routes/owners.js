@@ -20,7 +20,7 @@ router.get('', isEditor, getOwners);
 router.get('/:id', isEditor, getOwnerById);
 const upload = getUpload();
 router.post('', isEditor, upload.single('certificate_logo_image_url'), createOwner);
-router.put('/:id', isEditor, upload.single('certificate_logo_image_url'), updateOwner);
+router.post('/:id', isEditor, upload.single('certificate_logo_image_url'), updateOwner);
 router.delete('/:id', isEditor, deleteOwner);
 
 export default router; 

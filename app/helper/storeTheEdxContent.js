@@ -271,8 +271,8 @@ async function ensureDefaultEdxCourseCostConfig({ providerId, courseId }) {
   return;
 }
 
-async function fetchAndStoreEdxCourses(req, res, silent = false) {
-  if (!req && !res) silent = true;
+async function fetchAndStoreEdxCourses(req, res) {
+  const silent = true
   let totalInserted = 0, totalUpdated = 0, totalSkipped = 0;
   const fetchedCourseUuids = new Set();
   const results = [];
@@ -512,7 +512,7 @@ async function fetchAndStoreEdxCourses(req, res, silent = false) {
       hasNext = !!data?.next;
       page++;
 
-      const summary = `🎉 Cycle Complete. Inserted: ${totalInserted}, Updated: ${totalUpdated}, Skipped: ${totalSkipped}`;
+      const summary = `🎉 Cycle Complete. Inserted: ${totalInserted}, Updated: ${totalUpdated}, Skipped: ${totalSkipped}, ${silent}`;
       console.log(summary);
       // logger.info(summary);
     }
@@ -609,5 +609,5 @@ async function getOwnersByIds(ownersIds) {
 export { fetchAndStoreEdxCourses, getStaffByUuids, getOwnersByIds };
 
 cron.schedule('0 0 * * *', () => {
-  fetchAndStoreEdxCourses(null, null, true);
+  fetchAndStoreEdxCourses(null, null);
 });
