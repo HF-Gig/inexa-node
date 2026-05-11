@@ -536,15 +536,15 @@ async function fetchAndStoreEdxCourses(req, res) {
         }
       });
     
-      await db.courses.update(
-      { status: 1 },
-      {
-        where: {
-          id: {
-            [Op.in]: toUpdateStatus
-          }
-        }
-      });
+      // await db.courses.update(
+      // { status: 1 },
+      // {
+      //   where: {
+      //     id: {
+      //       [Op.in]: toUpdateStatus
+      //     }
+      //   }
+      // });
 
 
     if (res) {
