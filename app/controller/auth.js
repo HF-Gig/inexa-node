@@ -4,7 +4,7 @@ import { generateToken } from "../helper/generateToken.js";
 import jwt from 'jsonwebtoken'
 import { sendSignupMail } from "./sendSignupMail.js";
 import { sendPasswordResetMail } from "./sendPasswordResetMail.js";
-import sendEmail from "../helper/sendEmail.js";
+import sendEmail, { isEmailDeliveryError } from "../helper/sendEmail.js";
 
 export async function signup(req, res) {
     try {
@@ -99,6 +99,14 @@ export async function signup(req, res) {
 
     } catch (error) {
         console.error("Error in signup:", error);
+        if (isEmailDeliveryError(error)) {
+            return res.status(error.statusCode).json({
+                message: "We could not send the verification email right now. Please try again later.",
+                status: false,
+                statusCode: error.statusCode,
+                code: error.code
+            });
+        }
         return res.status(500).json({
             message: "Internal Server Error",
             status: false,
@@ -140,6 +148,14 @@ export async function resendVerification(req, res) {
 
     } catch (error) {
         console.error("Error in resendVerification:", error);
+        if (isEmailDeliveryError(error)) {
+            return res.status(error.statusCode).json({
+                message: "We could not send the verification email right now. Please try again later.",
+                status: false,
+                statusCode: error.statusCode,
+                code: error.code
+            });
+        }
         return res.status(500).json({ message: "Internal Server Error", status: false });
     }
 }

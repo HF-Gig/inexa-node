@@ -1,4 +1,4 @@
-import sendEmail from '../helper/sendEmail.js';
+import sendEmail, { isEmailDeliveryError } from '../helper/sendEmail.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -58,6 +58,9 @@ export const sendSignupMail = async (reqBody) => {
     return true;
   } catch (error) {
     console.error('Sending error:', error);
+    if (isEmailDeliveryError(error)) {
+      throw error;
+    }
     throw new Error('Failed to send email. Please try again later.');
   }
 };
