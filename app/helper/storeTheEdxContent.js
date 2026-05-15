@@ -225,8 +225,8 @@ async function upsertOwners(ownersArr, silent = false) {
       if (!existing.uuid && obj.uuid) {
         updateData.uuid = obj.uuid;
       }
-      if (!existing.certificate_logo_image_url && obj.certificate_logo_image_url) {
-        updateData.certificate_logo_image_url = obj.certificate_logo_image_url;
+      if (existing.certificate_logo_image_url !== obj.logo_image_url) {
+        updateData.certificate_logo_image_url = obj.logo_image_url;
       }
       if (Object.keys(updateData).length > 0) {
         await db.owner.update(updateData, { where: { id: existing.id }, silent });
@@ -235,7 +235,7 @@ async function upsertOwners(ownersArr, silent = false) {
     } else {
       const created = await db.owner.create({
         uuid: obj.uuid,
-        certificate_logo_image_url: obj.certificate_logo_image_url,
+        certificate_logo_image_url: obj.logo_image_url,
         name: obj.name,
       });
       ownerIds.push(created.id);
