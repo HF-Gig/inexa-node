@@ -424,7 +424,7 @@ async function fetchAndStoreEdxCourses(req, res) {
           totalInserted++;
           results.push({ course_id: course.uuid, title: course.title, action: 'inserted' });
         } else {
-          await courseRecord.update(courseData, { silent });
+          await courseRecord.update(courseData, { where: { id: courseRecord.id }, silent });
           totalUpdated++;
           results.push({ course_id: course.uuid, title: course.title, action: 'updated' });
         }
@@ -533,7 +533,8 @@ async function fetchAndStoreEdxCourses(req, res) {
           id: {
             [Op.in]: toDelete
           }
-        }
+        },
+        silent: true
       });
     
       // await db.courses.update(
