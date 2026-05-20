@@ -48,7 +48,7 @@ const server = http.createServer(app);
 startCourseCron();
 startPaystackInstallmentCron();
 startEdxContentCron();
-fetchAndStoreEdxCourses(null, null);
+// fetchAndStoreEdxCourses(null, null);
 app.use('/api', apiRoutes);
 
 
