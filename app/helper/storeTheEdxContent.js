@@ -20,6 +20,22 @@ function safeJsonField(val, fallback = null) {
   return fallback;
 }
 
+function preserveUpdatedAtForSilentUpdate(model, values, silent = false) {
+  if (!silent || !model?.rawAttributes?.updatedAt || Object.hasOwn(values, 'updatedAt')) {
+    return values;
+  }
+
+  const updatedAtColumn = model.rawAttributes.updatedAt.field || 'updatedAt';
+  const quotedUpdatedAtColumn = model.sequelize
+    .getQueryInterface()
+    .quoteIdentifier(updatedAtColumn);
+
+  return {
+    ...values,
+    updatedAt: model.sequelize.literal(quotedUpdatedAtColumn),
+  };
+}
+
 // Common function to extract only specified fields from each object in an array (or JSON string)
 function extractFieldsFromArray(arr, fields) {
   const array = safeJsonField(arr);
@@ -73,7 +89,10 @@ async function upsertOrganization(org, silent = false) {
         changes: updateData
       });
 
-      await db.organization.update(updateData, { where: { id: existing.id }, silent });
+      await db.organization.update(
+        preserveUpdatedAtForSilentUpdate(db.organization, updateData, silent),
+        { where: { id: existing.id }, silent }
+      );
     } else {
       logger.info({
         msg: 'Start DB NO-OP: Organization (Skipped Update)',
@@ -173,7 +192,10 @@ async function extractStaffFields(staffArr, silent = false) {
         const newStaff = await db.staff.create(staffData);
         staffUuids.push(newStaff.id);
       } else {
-        const updatedStaff = await db.staff.update(staffData, { where: { uuid: staffData.uuid }, silent });
+        const updatedStaff = await db.staff.update(
+          preserveUpdatedAtForSilentUpdate(db.staff, staffData, silent),
+          { where: { uuid: staffData.uuid }, silent }
+        );
         staffUuids.push(existingStaff.id);
       }
     } else {
@@ -229,7 +251,10 @@ async function upsertOwners(ownersArr, silent = false) {
         updateData.certificate_logo_image_url = obj.logo_image_url;
       }
       if (Object.keys(updateData).length > 0) {
-        await db.owner.update(updateData, { where: { id: existing.id }, silent });
+        await db.owner.update(
+          preserveUpdatedAtForSilentUpdate(db.owner, updateData, silent),
+          { where: { id: existing.id }, silent }
+        );
       }
       ownerIds.push(existing.id);
     } else {
@@ -424,7 +449,13 @@ async function fetchAndStoreEdxCourses(req, res) {
           totalInserted++;
           results.push({ course_id: course.uuid, title: course.title, action: 'inserted' });
         } else {
-          await courseRecord.update(courseData, { where: { id: courseRecord.id }, silent });
+          await db.courses.update(
+            preserveUpdatedAtForSilentUpdate(db.courses, courseData, silent),
+            {
+              where: { id: courseRecord.id },
+              silent,
+            }
+          );
           totalUpdated++;
           results.push({ course_id: course.uuid, title: course.title, action: 'updated' });
         }
@@ -481,7 +512,10 @@ async function fetchAndStoreEdxCourses(req, res) {
                 });
               } else {
                 const uniqueKey = await generateUniqueCourseKey(program);
-                await programCourseRecord.update({ owners: ownerIds, key: uniqueKey }, { silent });
+                await db.courses.update(
+                  preserveUpdatedAtForSilentUpdate(db.courses, { owners: ownerIds, key: uniqueKey }, silent),
+                  { where: { id: programCourseRecord.id }, silent }
+                );
               }
 
               // Create or update the program, linking to the program's course
@@ -495,7 +529,10 @@ async function fetchAndStoreEdxCourses(req, res) {
               });
               // Set type_id on course
               if (programTypeId) {
-                await programCourseRecord.update({ type_id: programTypeId }, { silent });
+                await db.courses.update(
+                  preserveUpdatedAtForSilentUpdate(db.courses, { type_id: programTypeId }, silent),
+                  { where: { id: programCourseRecord.id }, silent }
+                );
               }
               // Maintain many-to-many relationship (program_course)
               await db.program_course.findOrCreate({
@@ -527,7 +564,7 @@ async function fetchAndStoreEdxCourses(req, res) {
     const toDelete = dbCourses.filter(c => !fetchedCourseUuids.has(c.uuid)).map(c => c.id);
     const toUpdateStatus = dbCourses.filter(c => fetchedCourseUuids.has(c.uuid)).map(c => c.id);
     await db.courses.update(
-      { status: 0 },
+      preserveUpdatedAtForSilentUpdate(db.courses, { status: 0 }, silent),
       {
         where: {
           id: {
@@ -607,8 +644,10 @@ async function getOwnersByIds(ownersIds) {
   }));
 }
 
-export { fetchAndStoreEdxCourses, getStaffByUuids, getOwnersByIds };
+const startEdxContentCron = () => {
+  cron.schedule('0 0 * * *', () => {
+    fetchAndStoreEdxCourses(null, null);
+  });
+};
 
-cron.schedule('0 0 * * *', () => {
-  fetchAndStoreEdxCourses(null, null);
-});
+export { fetchAndStoreEdxCourses, getStaffByUuids, getOwnersByIds, startEdxContentCron };

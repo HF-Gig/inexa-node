@@ -10,6 +10,22 @@ const getFirstMonday = (date) => {
     return d.add(daysToAdd, 'day');
 };
 
+const preserveUpdatedAtForSilentUpdate = (model, values) => {
+    if (!model?.rawAttributes?.updatedAt) {
+        return values;
+    }
+
+    const updatedAtColumn = model.rawAttributes.updatedAt.field || 'updatedAt';
+    const quotedUpdatedAtColumn = model.sequelize
+        .getQueryInterface()
+        .quoteIdentifier(updatedAtColumn);
+
+    return {
+        ...values,
+        updatedAt: model.sequelize.literal(quotedUpdatedAtColumn),
+    };
+};
+
 const updateCourseStartDates = async () => {
     console.log('Running Cron Job: Updating Course Start Dates...');
     try {
@@ -42,10 +58,10 @@ const updateCourseStartDates = async () => {
         }
 
         const [updatedCount] = await Course.update(
-            {
+            preserveUpdatedAtForSilentUpdate(Course, {
                 start_date: formattedDate,
                 pacing_type: 'self_paced'
-            },
+            }),
 
 
             {

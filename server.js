@@ -11,6 +11,7 @@ import apiRoutes from './app/routes.js';
 import { handleSubscriptionWebhook } from './app/controller/payment.js';
 import { startCourseCron } from './app/cron/courseScheduler.js';
 import { startPaystackInstallmentCron } from './app/cron/paystackInstallments.js';
+import { fetchAndStoreEdxCourses, startEdxContentCron } from './app/helper/storeTheEdxContent.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,6 +47,8 @@ const server = http.createServer(app);
 // API Routes with common prefix
 startCourseCron();
 startPaystackInstallmentCron();
+startEdxContentCron();
+fetchAndStoreEdxCourses(null, null);
 app.use('/api', apiRoutes);
 
 
