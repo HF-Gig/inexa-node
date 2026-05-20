@@ -62,8 +62,6 @@ const updateCourseStartDates = async () => {
                 start_date: formattedDate,
                 pacing_type: 'self_paced'
             }),
-
-
             {
                 where: whereClause,
                 silent: true

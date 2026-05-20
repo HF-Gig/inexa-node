@@ -4,6 +4,7 @@ import { isEditor, isModerator } from '../middleware/roleCheck.js';
 import { getCourses, getCoursesDetail, createCourse, updateCourse, deleteCourse, getFilterData, getAllFilterData, getCourseDetailBySlug, getPopularCourses, getFeaturedCourses, updateFeaturedCourse, updateCobranding, exportCoursesCsv, updateAnnualDiscountForAllCourses } from "../controller/edxContent.js";
 import { fetchAndStoreEdxCourses } from "../helper/storeTheEdxContent.js";
 import getUpload from '../middleware/upload.js';
+import { updateCourseStartDates } from '../cron/courseScheduler.js';
 
 const router = express.Router();
 const upload = getUpload('courses');
@@ -15,6 +16,7 @@ const uploadFields = upload.fields([
 
 // Make /store public
 router.get('/store', fetchAndStoreEdxCourses);
+router.get('/update-date', updateCourseStartDates);
 router.get('/popular', getPopularCourses);
 router.get('', getCourses);
 router.get('/filters', getFilterData);

@@ -426,7 +426,8 @@ async function fetchAndStoreEdxCourses(req, res) {
           course_level: course?.level_type?.toLowerCase() || null,
           availability: selectedRun?.availability?.toLowerCase() || null,
           prerequisites: course?.prerequisites_raw || null,
-          pacing_type: selectedRun?.pacing_type || null,
+          // pacing_type: selectedRun?.pacing_type || null,
+          pacing_type: 'self_paced',
           efforts: safeJsonField((selectedRun.min_effort || selectedRun.max_effort) ? {
             min_effort: selectedRun?.min_effort,
             max_effort: selectedRun?.max_effort
