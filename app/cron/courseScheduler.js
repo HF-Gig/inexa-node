@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import dayjs from 'dayjs';
 import initModels from '../../models/init_models.js';
 
-const getFirstMonday = (date) => {
+export const getFirstMonday = (date) => {
     let d = dayjs(date).startOf('month');
     const dayOfWeek = d.day();
     const daysToAdd = (1 - dayOfWeek + 7) % 7;

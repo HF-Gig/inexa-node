@@ -5,6 +5,8 @@ import fs from 'fs';
 import { getEdxToken } from './generateEdxToken.js';
 import logger from './logger.js';
 import { Op } from 'sequelize';
+import dayjs from 'dayjs';
+import { getFirstMonday } from '../cron/courseScheduler.js';
 
 function safeJsonField(val, fallback = null) {
   if (val == null) return fallback;
@@ -402,6 +404,15 @@ async function fetchAndStoreEdxCourses(req, res) {
             subjectIds.push(subject.id);
           }
         }
+        const now = dayjs();
+        let targetDate = getFirstMonday(now);
+
+        if (now.isAfter(targetDate, 'day')) {
+            targetDate = getFirstMonday(now.add(1, 'month'));
+        }
+
+        const formattedDate = targetDate.toDate();
+
         // Before creating or updating a course, generate a unique key
         const uniqueKey = await generateUniqueCourseKey(course);
         const courseTypes = await db.program_type.findOne({ where: { slug: 'course' } });
@@ -415,7 +426,7 @@ async function fetchAndStoreEdxCourses(req, res) {
           content_type: course.content_type,
           title: course.title || null,
           image_url: course.image_url || null,
-          start_date: selectedRun?.start || null,
+          start_date: formattedDate || selectedRun?.start || null,
           enrollment_count: course.enrollment_count || null,
           skills: safeJsonField(course.skills ? course.skills.map(s => s.name) : course.skill_names),
           weeks_to_complete: selectedRun?.weeks_to_complete || null,
