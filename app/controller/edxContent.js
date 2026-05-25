@@ -1995,6 +1995,7 @@ export const getFilterData = async (req, res) => {
         id: [...uniqueSubjects]
       },
       attributes: ['id', 'title'],
+      order: [['title', 'ASC']],
       raw: true,
     });
 
